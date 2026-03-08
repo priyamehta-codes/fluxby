@@ -394,6 +394,7 @@ export interface TranslationKeys {
     noRecurringPayments: string;
     confirmSubscriptions: string;
     average: string;
+    spendingByCategory: string;
   };
   budgets: {
     title: string;
@@ -575,6 +576,9 @@ export interface TranslationKeys {
     selectParent: string;
     searchPlaceholder: string;
     searchCategories: string;
+    amountModeAllTime: string;
+    amountModeSelectedPeriod: string;
+    amountModeTooltip: string;
   };
   import: {
     title: string;
@@ -1795,6 +1799,7 @@ export const nl: TranslationKeys = {
     confirmSubscriptions:
       'Bevestig gedetecteerde abonnementen op de abonnementen pagina',
     average: 'Gem.',
+    spendingByCategory: 'Uitgaven per categorie',
   },
   budgets: {
     title: 'Budgetten',
@@ -1994,6 +1999,10 @@ export const nl: TranslationKeys = {
     selectParent: 'Selecteer hoofdcategorie',
     searchPlaceholder: 'Zoek categorieën...',
     searchCategories: 'Zoek categorie...',
+    amountModeAllTime: 'Alle tijd',
+    amountModeSelectedPeriod: 'Geselecteerde periode',
+    amountModeTooltip:
+      'Toon bedragen voor alle transacties of alleen de geselecteerde periode',
   },
   import: {
     title: 'Importeren',

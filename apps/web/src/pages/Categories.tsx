@@ -5,6 +5,7 @@ import {
   useLayoutEffect,
   useRef,
   useDeferredValue,
+  useCallback,
 } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -24,6 +25,8 @@ import {
   FolderOpen,
   ArrowUpRight,
   ArrowDownRight,
+  Calendar,
+  Infinity as InfinityIcon,
 } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -47,6 +50,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useDataService } from '@/contexts/DatabaseContext';
+import { readFromOPFS, writeToOPFS } from '@fluxby/database';
 import { cn } from '@/lib/utils';
 import { Currency } from '@/components/ui/currency';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -189,7 +193,7 @@ export default function Categories() {
   useDocumentTitle(t.categories.title);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const { setCategories, clearOpposingAccountFilters } = useFilters();
+  const { setCategories, clearOpposingAccountFilters, filters } = useFilters();
 
   // UI State
   const [showAddForm, setShowAddForm] = useState(false);
@@ -200,6 +204,12 @@ export default function Categories() {
   );
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(
     new Set()
+  );
+  const [collapsedLoaded, setCollapsedLoaded] = useState(false);
+
+  // Amount mode: 'all-time' or 'selected-period'
+  const [amountMode, setAmountMode] = useState<'all-time' | 'selected-period'>(
+    'all-time'
   );
 
   // Sort switch refs
@@ -240,6 +250,94 @@ export default function Categories() {
   >(new Set());
   const [isSeeding, setIsSeeding] = useState(false);
   const [isLoadingSeed, setIsLoadingSeed] = useState(false);
+
+  // OPFS settings keys for persistence
+  const collapsedSettingsKey = activeProfileId
+    ? `categories-collapsed-${activeProfileId}`
+    : null;
+  const amountModeSettingsKey = activeProfileId
+    ? `categories-amount-mode-${activeProfileId}`
+    : null;
+
+  // Load collapsed categories and amount mode from OPFS on mount/profile change
+  useEffect(() => {
+    let mounted = true;
+
+    const loadSettings = async () => {
+      if (!activeProfileId) return;
+
+      // Load collapsed categories
+      const collapsedKey = `categories-collapsed-${activeProfileId}`;
+      const savedCollapsed = await readFromOPFS<string[]>(collapsedKey);
+
+      // Load amount mode
+      const modeKey = `categories-amount-mode-${activeProfileId}`;
+      const savedMode = await readFromOPFS<'all-time' | 'selected-period'>(
+        modeKey
+      );
+
+      if (!mounted) return;
+
+      // If we have saved collapsed IDs, compute expanded as all except those
+      if (savedCollapsed && savedCollapsed.length > 0) {
+        setExpandedCategories((prev) => {
+          // This will be properly set once categories load
+          // For now, mark as "no collapsed saved" - handled in categories load effect
+          return prev;
+        });
+        // Store collapsed IDs temporarily to apply when categories load
+        setCollapsedLoaded(true);
+        // We need to store the collapsed IDs somewhere to apply them
+        // Using a ref would be cleaner, but for simplicity we'll apply in the categories effect
+        (window as unknown as Record<string, string[]>)[
+          `__fluxby_collapsed_${activeProfileId}`
+        ] = savedCollapsed;
+      } else {
+        setCollapsedLoaded(true);
+      }
+
+      if (savedMode) {
+        setAmountMode(savedMode);
+      }
+    };
+
+    loadSettings();
+
+    return () => {
+      mounted = false;
+    };
+  }, [activeProfileId]);
+
+  // Save amount mode to OPFS when it changes
+  const handleAmountModeChange = useCallback(
+    async (mode: 'all-time' | 'selected-period') => {
+      setAmountMode(mode);
+      if (amountModeSettingsKey) {
+        try {
+          await writeToOPFS(amountModeSettingsKey, mode);
+        } catch (err) {
+          console.error('Failed to save amount mode to OPFS:', err);
+        }
+      }
+    },
+    [amountModeSettingsKey]
+  );
+
+  // Save collapsed categories to OPFS
+  const saveCollapsedCategories = useCallback(
+    async (expanded: Set<string>, allParentIds: string[]) => {
+      if (!collapsedSettingsKey) return;
+
+      // Collapsed = all parent IDs minus expanded
+      const collapsed = allParentIds.filter((id) => !expanded.has(id));
+      try {
+        await writeToOPFS(collapsedSettingsKey, collapsed);
+      } catch (err) {
+        console.error('Failed to save collapsed categories to OPFS:', err);
+      }
+    },
+    [collapsedSettingsKey]
+  );
 
   // Ensure seed data is loaded when the seed modal opens (fallback if invoked from other places)
   useEffect(() => {
@@ -283,6 +381,23 @@ export default function Categories() {
     queryKey: ['categoryRules', activeProfileId],
     queryFn: () => dataService.getCategoryRules() as Promise<CategoryRule[]>,
     staleTime: 5 * 60 * 1000, // 5 minutes - rules rarely change
+  });
+
+  // Query for period-based category stats (only when in selected-period mode)
+  const { data: periodStats } = useQuery({
+    queryKey: [
+      'categoryStatsByPeriod',
+      activeProfileId,
+      filters.dateRange.start.toISOString(),
+      filters.dateRange.end.toISOString(),
+    ],
+    queryFn: () =>
+      dataService.getCategoryStatsByPeriod(
+        filters.dateRange.start,
+        filters.dateRange.end
+      ),
+    enabled: amountMode === 'selected-period',
+    staleTime: 1 * 60 * 1000, // 1 minute - period stats may change more often
   });
 
   // Mutations
@@ -454,20 +569,63 @@ export default function Categories() {
   }, [rules]);
 
   // Calculate parent totals (sum of subcategories)
+  // Uses period stats when in selected-period mode, otherwise uses all-time stats from categories
   const parentTotals = useMemo(() => {
     const totals = new Map<string, { count: number; amount: number }>();
+
+    // Helper to get stats for a category
+    const getStats = (
+      categoryId: string,
+      defaultCount: number,
+      defaultAmount: number
+    ) => {
+      if (amountMode === 'selected-period' && periodStats) {
+        const stats = periodStats.get(categoryId);
+        return stats
+          ? { count: stats.count, amount: stats.amount }
+          : { count: 0, amount: 0 };
+      }
+      return { count: defaultCount, amount: defaultAmount };
+    };
+
     for (const parent of parentCategories) {
       const subs = subcategoriesByParent.get(parent.id) || [];
-      let count = parent.transactionCount || 0;
-      let amount = parent.totalExpenses || 0;
+      const parentStats = getStats(
+        parent.id,
+        parent.transactionCount || 0,
+        parent.totalExpenses || 0
+      );
+      let count = parentStats.count;
+      let amount = parentStats.amount;
+
       for (const sub of subs) {
-        count += sub.transactionCount || 0;
-        amount += sub.totalExpenses || 0;
+        const subStats = getStats(
+          sub.id,
+          sub.transactionCount || 0,
+          sub.totalExpenses || 0
+        );
+        count += subStats.count;
+        amount += subStats.amount;
       }
       totals.set(parent.id, { count, amount });
     }
     return totals;
-  }, [parentCategories, subcategoriesByParent]);
+  }, [parentCategories, subcategoriesByParent, amountMode, periodStats]);
+
+  // Helper to get stats for a single category (subcategory display)
+  const getCategoryStats = useCallback(
+    (category: Category) => {
+      if (amountMode === 'selected-period' && periodStats) {
+        const stats = periodStats.get(category.id);
+        return stats ? stats : { count: 0, amount: 0 };
+      }
+      return {
+        count: category.transactionCount || 0,
+        amount: category.totalExpenses || 0,
+      };
+    },
+    [amountMode, periodStats]
+  );
 
   // Helper to render amounts with colored arrows
   const renderAmountWithArrow = (amount: number) => {
@@ -580,26 +738,53 @@ export default function Categories() {
     { key: 'amount' as const, label: t.addressBook?.sortAmount || 'Amount' },
   ];
 
-  // Toggle category expansion
-  const toggleExpanded = (categoryId: string) => {
-    setExpandedCategories((prev) => {
-      const next = new Set(prev);
-      if (next.has(categoryId)) {
-        next.delete(categoryId);
-      } else {
-        next.add(categoryId);
-      }
-      return next;
-    });
-  };
+  // Toggle category expansion and save to OPFS
+  const toggleExpanded = useCallback(
+    (categoryId: string) => {
+      setExpandedCategories((prev) => {
+        const next = new Set(prev);
+        if (next.has(categoryId)) {
+          next.delete(categoryId);
+        } else {
+          next.add(categoryId);
+        }
+        // Save to OPFS asynchronously
+        const allParentIds = parentCategories.map((p) => p.id);
+        saveCollapsedCategories(next, allParentIds);
+        return next;
+      });
+    },
+    [parentCategories, saveCollapsedCategories]
+  );
 
-  // Expand all by default when categories load or profile changes
+  // Expand categories when they load, respecting saved collapsed state
   useEffect(() => {
-    if (parentCategories.length > 0) {
-      // Always expand all categories when they load or profile changes
-      setExpandedCategories(new Set(parentCategories.map((p) => p.id)));
+    if (parentCategories.length > 0 && collapsedLoaded) {
+      const allParentIds = parentCategories.map((p) => p.id);
+
+      // Check if we have saved collapsed IDs
+      const savedCollapsed = activeProfileId
+        ? (window as unknown as Record<string, string[]>)[
+            `__fluxby_collapsed_${activeProfileId}`
+          ]
+        : null;
+
+      if (savedCollapsed && savedCollapsed.length > 0) {
+        // Expand all except the saved collapsed ones
+        const expandedSet = new Set(
+          allParentIds.filter((id) => !savedCollapsed.includes(id))
+        );
+        setExpandedCategories(expandedSet);
+        // Clean up the temporary storage
+        delete (window as unknown as Record<string, string[]>)[
+          `__fluxby_collapsed_${activeProfileId}`
+        ];
+      } else {
+        // No saved state, expand all by default
+        setExpandedCategories(new Set(allParentIds));
+      }
     }
-  }, [parentCategories, activeProfileId]);
+  }, [parentCategories, activeProfileId, collapsedLoaded]);
 
   // Edit handlers
   const startEditing = (category: Category) => {
@@ -910,9 +1095,11 @@ export default function Categories() {
                 </Tooltip>
               </TooltipProvider>
               <span className='ml-auto flex flex-col items-end text-xs text-muted-foreground'>
-                <span>{renderAmountWithArrow(sub.totalExpenses || 0)}</span>
                 <span>
-                  {sub.transactionCount || 0} {t.categories.transactions}
+                  {renderAmountWithArrow(getCategoryStats(sub).amount)}
+                </span>
+                <span>
+                  {getCategoryStats(sub).count} {t.categories.transactions}
                 </span>
               </span>
             </div>
@@ -1492,28 +1679,77 @@ export default function Categories() {
                   )}{' '}
                   {t.categories.subcategoriesCount || 'subcategories'}
                 </span>
-                <div
-                  ref={sortSwitchOuterRef}
-                  className='relative inline-flex items-center rounded-lg border border-border bg-muted/50 p-0.5'
-                >
+                <div className='flex items-center gap-2'>
+                  {/* Amount mode toggle */}
+                  <TooltipProvider delayDuration={100}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div className='relative inline-flex items-center rounded-lg border border-border bg-muted/50 p-0.5'>
+                          <button
+                            onClick={() => handleAmountModeChange('all-time')}
+                            className={cn(
+                              'relative z-10 flex items-center gap-1 rounded-md px-2 py-1.5 text-xs font-medium whitespace-nowrap transition-colors',
+                              amountMode === 'all-time'
+                                ? 'bg-purple-600 text-white'
+                                : 'text-muted-foreground hover:text-foreground'
+                            )}
+                          >
+                            <InfinityIcon className='h-3 w-3' />
+                          </button>
+                          <button
+                            onClick={() =>
+                              handleAmountModeChange('selected-period')
+                            }
+                            className={cn(
+                              'relative z-10 flex items-center gap-1 rounded-md px-2 py-1.5 text-xs font-medium whitespace-nowrap transition-colors',
+                              amountMode === 'selected-period'
+                                ? 'bg-purple-600 text-white'
+                                : 'text-muted-foreground hover:text-foreground'
+                            )}
+                          >
+                            <Calendar className='h-3 w-3' />
+                          </button>
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>
+                          {t.categories.amountModeTooltip ||
+                            'Toggle between all-time and selected period amounts'}
+                        </p>
+                        <p className='mt-1 text-xs text-muted-foreground'>
+                          {amountMode === 'all-time'
+                            ? t.categories.amountModeAllTime || 'All time'
+                            : t.categories.amountModeSelectedPeriod ||
+                              'Selected period'}
+                        </p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+
+                  {/* Sort switch */}
                   <div
-                    ref={sortIndicatorRef}
-                    className='absolute top-0.5 h-[calc(100%-4px)] rounded-md bg-purple-600 shadow-sm transition-all duration-200 ease-out'
-                  />
-                  {sortOptions.map((option) => (
-                    <button
-                      key={option.key}
-                      onClick={() => setSortBy(option.key)}
-                      className={cn(
-                        'relative z-10 rounded-md px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-colors',
-                        sortBy === option.key
-                          ? 'text-white'
-                          : 'text-muted-foreground hover:text-foreground'
-                      )}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
+                    ref={sortSwitchOuterRef}
+                    className='relative inline-flex items-center rounded-lg border border-border bg-muted/50 p-0.5'
+                  >
+                    <div
+                      ref={sortIndicatorRef}
+                      className='absolute top-0.5 h-[calc(100%-4px)] rounded-md bg-purple-600 shadow-sm transition-all duration-200 ease-out'
+                    />
+                    {sortOptions.map((option) => (
+                      <button
+                        key={option.key}
+                        onClick={() => setSortBy(option.key)}
+                        className={cn(
+                          'relative z-10 rounded-md px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-colors',
+                          sortBy === option.key
+                            ? 'text-white'
+                            : 'text-muted-foreground hover:text-foreground'
+                        )}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>

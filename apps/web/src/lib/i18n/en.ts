@@ -452,6 +452,7 @@ export const en: TranslationKeys = {
     confirmSubscriptions:
       'Confirm detected subscriptions on the subscriptions page',
     average: 'Avg',
+    spendingByCategory: 'Spending by category',
   },
   budgets: {
     title: 'Budgets',
@@ -651,6 +652,10 @@ export const en: TranslationKeys = {
     selectParent: 'Select parent category',
     searchPlaceholder: 'Search categories...',
     searchCategories: 'Search category...',
+    amountModeAllTime: 'All time',
+    amountModeSelectedPeriod: 'Selected period',
+    amountModeTooltip:
+      'Show amounts for all transactions or only the selected period',
   },
   import: {
     title: 'Import',

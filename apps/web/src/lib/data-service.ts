@@ -507,6 +507,50 @@ export function createDataService(db: Database) {
       );
     },
 
+    /**
+     * Get category statistics for a specific date range
+     * Returns transaction count and total amount per category within the period
+     */
+    async getCategoryStatsByPeriod(
+      startDate: Date,
+      endDate: Date
+    ): Promise<Map<string, { count: number; amount: number }>> {
+      const pid = profileId();
+      if (!pid) return new Map();
+
+      // Convert dates to epoch timestamps (milliseconds)
+      const startTs = startDate.getTime();
+      const endTs = endDate.getTime();
+
+      const rows = await db.queryAsync<{
+        categoryId: string;
+        cnt: number;
+        total: number;
+      }>(
+        `SELECT 
+           category_id as categoryId, 
+           COUNT(*) as cnt, 
+           SUM(amount) as total
+         FROM transactions 
+         WHERE is_deleted = 0 
+           AND profile_id = ? 
+           AND category_id IS NOT NULL
+           AND date >= ?
+           AND date <= ?
+         GROUP BY category_id`,
+        [pid, startTs, endTs]
+      );
+
+      const result = new Map<string, { count: number; amount: number }>();
+      for (const row of rows) {
+        result.set(row.categoryId, {
+          count: row.cnt,
+          amount: row.total,
+        });
+      }
+      return result;
+    },
+
     async createCategory(data: {
       name: string;
       icon?: string;
@@ -2216,6 +2260,95 @@ export function createDataService(db: Database) {
         percentage: total > 0 ? (row.amount / total) * 100 : 0,
         transactionCount: row.transactionCount,
       }));
+    },
+
+    async getMonthlyExpensesByCategory(startDate?: string, endDate?: string) {
+      const pid = profileId();
+      if (!pid) return { data: [], parentCategories: [] };
+
+      // First get all parent categories for legend
+      const parentCategories = await db.queryAsync<{
+        id: string;
+        name: string;
+        color: string;
+        icon: string;
+      }>(
+        `SELECT id, name, color, icon FROM categories 
+         WHERE profile_id = ? AND parent_id IS NULL AND is_deleted = 0
+         ORDER BY name ASC`,
+        [pid]
+      );
+
+      // Query expenses grouped by month and parent category
+      // Child categories are aggregated into their parent
+      let sql = `
+        SELECT 
+          strftime('%Y-%m', t.date) as month,
+          COALESCE(parent.id, c.id) as parentCategoryId,
+          COALESCE(parent.name, c.name, 'Uncategorized') as parentCategoryName,
+          COALESCE(parent.color, c.color, '#9CA3AF') as color,
+          SUM(ABS(t.amount)) as amount
+        FROM transactions t
+        LEFT JOIN categories c ON t.category_id = c.id
+        LEFT JOIN categories parent ON c.parent_id = parent.id
+        JOIN accounts a ON t.account_id = a.id
+        WHERE a.profile_id = ? AND t.is_deleted = 0 
+          AND t.amount < 0 AND t.type != 'transfer'
+      `;
+      const params: unknown[] = [pid];
+
+      if (startDate) {
+        sql += ' AND t.date >= ?';
+        params.push(startDate);
+      }
+      if (endDate) {
+        sql += ' AND t.date <= ?';
+        params.push(endDate);
+      }
+
+      sql += ` GROUP BY strftime('%Y-%m', t.date), parentCategoryId
+               ORDER BY month ASC, amount DESC`;
+
+      const rows = await db.queryAsync<{
+        month: string;
+        parentCategoryId: string | null;
+        parentCategoryName: string;
+        color: string;
+        amount: number;
+      }>(sql, params);
+
+      // Transform into format needed for stacked bar chart
+      // Each month becomes an object with properties for each parent category
+      const monthMap = new Map<
+        string,
+        { month: string; [categoryName: string]: string | number }
+      >();
+      const categoryColors = new Map<string, string>();
+
+      for (const row of rows) {
+        if (!monthMap.has(row.month)) {
+          monthMap.set(row.month, { month: row.month });
+        }
+        const monthData = monthMap.get(row.month)!;
+        const categoryKey = row.parentCategoryName;
+        const currentValue = monthData[categoryKey];
+        monthData[categoryKey] =
+          (typeof currentValue === 'number' ? currentValue : 0) + row.amount;
+        categoryColors.set(categoryKey, row.color);
+      }
+
+      // Convert to array and add category colors as metadata
+      const data = Array.from(monthMap.values());
+
+      return {
+        data,
+        parentCategories: parentCategories.map((c) => ({
+          id: c.id,
+          name: c.name,
+          color: categoryColors.get(c.name) || c.color,
+          icon: c.icon,
+        })),
+      };
     },
 
     async getDailyExpenses(startDate?: string, endDate?: string) {
