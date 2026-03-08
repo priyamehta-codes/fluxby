@@ -395,6 +395,7 @@ export interface TranslationKeys {
     confirmSubscriptions: string;
     average: string;
     spendingByCategory: string;
+    legendLabel: string;
   };
   budgets: {
     title: string;
@@ -1800,6 +1801,7 @@ export const nl: TranslationKeys = {
       'Bevestig gedetecteerde abonnementen op de abonnementen pagina',
     average: 'Gem.',
     spendingByCategory: 'Uitgaven per categorie',
+    legendLabel: 'Categoriefilter',
   },
   budgets: {
     title: 'Budgetten',

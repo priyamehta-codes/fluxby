@@ -453,6 +453,7 @@ export const en: TranslationKeys = {
       'Confirm detected subscriptions on the subscriptions page',
     average: 'Avg',
     spendingByCategory: 'Spending by category',
+    legendLabel: 'Category filter',
   },
   budgets: {
     title: 'Budgets',

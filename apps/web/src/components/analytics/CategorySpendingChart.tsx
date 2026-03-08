@@ -232,13 +232,18 @@ export function CategorySpendingChart({
       </div>
 
       {/* Custom Legend */}
-      <div className='flex flex-wrap gap-2 border-t pt-4'>
+      <div
+        className='flex flex-wrap gap-2 border-t pt-4'
+        role='group'
+        aria-label={t.analytics?.legendLabel || 'Category filter'}
+      >
         {categoriesWithData.map((cat) => {
           const isDisabled = disabledCategories.has(cat.name);
           return (
             <button
               key={cat.id}
               onClick={() => toggleCategory(cat.name)}
+              aria-pressed={!isDisabled}
               className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-sm transition-colors ${
                 isDisabled
                   ? 'bg-muted/50 text-muted-foreground line-through opacity-50'

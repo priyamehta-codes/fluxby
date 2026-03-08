@@ -49,12 +49,10 @@ coverage/
 vite.config.js
 vite.config.d.ts
 
-# Rust
-target/
-apps/tauri/target/
-
 # Nexus temporary files
-.nexus/
+.nexus/**/tmp/
+.nexus/**/*.tmp
+.nexus/**/temp/
 
 # Nexus local caches
 .nexus/**/.cache/
@@ -62,8 +60,10 @@ apps/tauri/target/
 # Agent memory backups (keep originals)
 .nexus/memory/*.backup.md
 
-.nexusrc
+# Rust
+target/
+apps/tauri/target/
 
+# Test artifacts
 test-results/
-
 playwright-report/

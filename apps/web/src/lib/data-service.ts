@@ -518,9 +518,9 @@ export function createDataService(db: Database) {
       const pid = profileId();
       if (!pid) return new Map();
 
-      // Convert dates to epoch timestamps (milliseconds)
-      const startTs = startDate.getTime();
-      const endTs = endDate.getTime();
+      // Convert dates to ISO date strings (YYYY-MM-DD) to match TEXT date column
+      const startStr = startDate.toISOString().split('T')[0];
+      const endStr = endDate.toISOString().split('T')[0];
 
       const rows = await db.queryAsync<{
         categoryId: string;
@@ -538,7 +538,7 @@ export function createDataService(db: Database) {
            AND date >= ?
            AND date <= ?
          GROUP BY category_id`,
-        [pid, startTs, endTs]
+        [pid, startStr, endStr]
       );
 
       const result = new Map<string, { count: number; amount: number }>();
