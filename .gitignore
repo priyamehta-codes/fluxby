@@ -51,6 +51,7 @@ vite.config.d.ts
 
 # Nexus temporary files
 .nexus/
+.nexusrc
 
 # Nexus local caches
 .nexus/**/.cache/
