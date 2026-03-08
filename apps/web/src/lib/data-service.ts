@@ -522,6 +522,24 @@ export function createDataService(db: Database) {
       const startStr = startDate.toISOString().split('T')[0];
       const endStr = endDate.toISOString().split('T')[0];
 
+      // DEBUG: Log query parameters
+      console.log('[DEBUG getCategoryStatsByPeriod] profileId:', pid);
+      console.log('[DEBUG getCategoryStatsByPeriod] startDate:', startStr, 'endDate:', endStr);
+
+      // DEBUG: Query without date filter to check if data exists
+      const allRows = await db.queryAsync<{
+        categoryId: string;
+        cnt: number;
+        total: number;
+      }>(
+        `SELECT category_id as categoryId, COUNT(*) as cnt, SUM(amount) as total
+         FROM transactions 
+         WHERE is_deleted = 0 AND profile_id = ? AND category_id IS NOT NULL
+         GROUP BY category_id`,
+        [pid]
+      );
+      console.log('[DEBUG getCategoryStatsByPeriod] All category stats (no date filter):', allRows);
+
       const rows = await db.queryAsync<{
         categoryId: string;
         cnt: number;
@@ -540,6 +558,9 @@ export function createDataService(db: Database) {
          GROUP BY category_id`,
         [pid, startStr, endStr]
       );
+
+      // DEBUG: Log raw results
+      console.log('[DEBUG getCategoryStatsByPeriod] Filtered rows:', rows);
 
       const result = new Map<string, { count: number; amount: number }>();
       for (const row of rows) {
