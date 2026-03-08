@@ -50,9 +50,7 @@ vite.config.js
 vite.config.d.ts
 
 # Nexus temporary files
-.nexus/**/tmp/
-.nexus/**/*.tmp
-.nexus/**/temp/
+.nexus/
 
 # Nexus local caches
 .nexus/**/.cache/
