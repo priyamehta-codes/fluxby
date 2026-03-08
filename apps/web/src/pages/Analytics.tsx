@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { CategorySpendingChart } from '@/components/analytics/CategorySpendingChart';
 import {
   Card,
   CardContent,
@@ -127,6 +128,19 @@ export default function Analytics() {
         yearEndDate,
         'expense'
       ) as Promise<CategoryBreakdown[]>,
+    staleTime: 2 * 60 * 1000, // 2 minutes
+    enabled: !!activeProfileId,
+  });
+
+  const { data: monthlyExpensesByCategory } = useQuery({
+    queryKey: [
+      'monthly-expenses-by-category',
+      activeProfileId,
+      yearStartDate,
+      yearEndDate,
+    ],
+    queryFn: () =>
+      dataService.getMonthlyExpensesByCategory(yearStartDate, yearEndDate),
     staleTime: 2 * 60 * 1000, // 2 minutes
     enabled: !!activeProfileId,
   });
@@ -607,6 +621,37 @@ export default function Analytics() {
                 <EmptyState
                   icon={TrendingUp}
                   title={t.analytics.noData || 'Geen data beschikbaar'}
+                  className='h-full py-8'
+                />
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Spending by Category (stacked bar chart) */}
+      <div className=''>
+        <Card
+          className='rounded-none border-x-0 shadow-none sm:rounded-2xl sm:border-x sm:shadow-sm'
+          data-onboarding='category-spending-trend'
+        >
+          <CardHeader>
+            <CardTitle className='text-base sm:text-lg'>
+              {t.analytics.spendingByCategory}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {monthlyExpensesByCategory &&
+            monthlyExpensesByCategory.data.length > 0 ? (
+              <CategorySpendingChart
+                data={monthlyExpensesByCategory.data}
+                parentCategories={monthlyExpensesByCategory.parentCategories}
+              />
+            ) : (
+              <div className='h-[300px]'>
+                <EmptyState
+                  icon={ArrowDownRight}
+                  title={t.analytics.noData}
                   className='h-full py-8'
                 />
               </div>

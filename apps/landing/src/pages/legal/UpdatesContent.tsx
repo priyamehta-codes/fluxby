@@ -33,17 +33,17 @@ const UpdatesContent = () => {
   const updatesPage = t.legal?.updatesPage;
 
   const releases = [
-        {
+    {
       version: '1.8.2',
       date: updatesPage?.v182Date || '8 maart 2026',
       title: updatesPage?.v182Title || 'Release 1.8.2',
-      description:
-        updatesPage?.v182Description ||
-        '1 bugfix.',
+      description: updatesPage?.v182Description || '1 bugfix.',
       features: [
         {
           icon: Database,
-          title: updatesPage?.v182F1Title || 'Resolve wasm memory access fout in transactionasync',
+          title:
+            updatesPage?.v182F1Title ||
+            'Resolve wasm memory access fout in transactionasync',
           description: updatesPage?.v182F1Desc || 'Bugs gedood, app verbeterd.',
         },
       ],
