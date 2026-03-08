@@ -216,6 +216,9 @@ export default function Categories() {
   const sortIndicatorRef = useRef<HTMLDivElement | null>(null);
   const sortSwitchOuterRef = useRef<HTMLDivElement | null>(null);
 
+  // Ref to temporarily store collapsed category IDs between effects
+  const savedCollapsedRef = useRef<string[] | null>(null);
+
   // Add category state
   const [newName, setNewName] = useState('');
   const [newDescription, setNewDescription] = useState('');
@@ -287,11 +290,8 @@ export default function Categories() {
         });
         // Store collapsed IDs temporarily to apply when categories load
         setCollapsedLoaded(true);
-        // We need to store the collapsed IDs somewhere to apply them
-        // Using a ref would be cleaner, but for simplicity we'll apply in the categories effect
-        (window as unknown as Record<string, string[]>)[
-          `__fluxby_collapsed_${activeProfileId}`
-        ] = savedCollapsed;
+        // Store in ref to apply when categories load
+        savedCollapsedRef.current = savedCollapsed;
       } else {
         setCollapsedLoaded(true);
       }
@@ -762,12 +762,8 @@ export default function Categories() {
     if (parentCategories.length > 0 && collapsedLoaded) {
       const allParentIds = parentCategories.map((p) => p.id);
 
-      // Check if we have saved collapsed IDs
-      const savedCollapsed = activeProfileId
-        ? (window as unknown as Record<string, string[]>)[
-            `__fluxby_collapsed_${activeProfileId}`
-          ]
-        : null;
+      // Check if we have saved collapsed IDs from ref
+      const savedCollapsed = savedCollapsedRef.current;
 
       if (savedCollapsed && savedCollapsed.length > 0) {
         // Expand all except the saved collapsed ones
@@ -775,10 +771,8 @@ export default function Categories() {
           allParentIds.filter((id) => !savedCollapsed.includes(id))
         );
         setExpandedCategories(expandedSet);
-        // Clean up the temporary storage
-        delete (window as unknown as Record<string, string[]>)[
-          `__fluxby_collapsed_${activeProfileId}`
-        ];
+        // Clean up the ref
+        savedCollapsedRef.current = null;
       } else {
         // No saved state, expand all by default
         setExpandedCategories(new Set(allParentIds));
@@ -1686,6 +1680,9 @@ export default function Categories() {
                       <TooltipTrigger asChild>
                         <div className='relative inline-flex items-center rounded-lg border border-border bg-muted/50 p-0.5'>
                           <button
+                            type='button'
+                            aria-label={t.categories.amountModeAllTime}
+                            aria-pressed={amountMode === 'all-time'}
                             onClick={() => handleAmountModeChange('all-time')}
                             className={cn(
                               'relative z-10 flex items-center gap-1 rounded-md px-2 py-1.5 text-xs font-medium whitespace-nowrap transition-colors',
@@ -1697,6 +1694,9 @@ export default function Categories() {
                             <InfinityIcon className='h-3 w-3' />
                           </button>
                           <button
+                            type='button'
+                            aria-label={t.categories.amountModeSelectedPeriod}
+                            aria-pressed={amountMode === 'selected-period'}
                             onClick={() =>
                               handleAmountModeChange('selected-period')
                             }
