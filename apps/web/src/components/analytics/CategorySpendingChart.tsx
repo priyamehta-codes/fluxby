@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import {
   BarChart,
   Bar,
@@ -50,12 +50,16 @@ export function CategorySpendingChart({
     return () => clearTimeout(timer);
   }, [data]);
 
-  // Get all category names that actually have data
-  const categoriesWithData = parentCategories.filter((cat) =>
-    data.some((d) => {
-      const value = d[cat.name];
-      return typeof value === 'number' && value > 0;
-    })
+  // Get all category names that actually have data (memoized)
+  const categoriesWithData = useMemo(
+    () =>
+      parentCategories.filter((cat) =>
+        data.some((d) => {
+          const value = d[cat.name];
+          return typeof value === 'number' && value > 0;
+        })
+      ),
+    [data, parentCategories]
   );
 
   // Toggle category visibility
@@ -71,17 +75,21 @@ export function CategorySpendingChart({
     });
   };
 
-  // Filter out disabled categories from data for the chart
-  const filteredData = data.map((monthData) => {
-    const filtered: MonthlyExpenseData = { month: monthData.month };
-    for (const key of Object.keys(monthData)) {
-      if (key === 'month') continue;
-      if (!disabledCategories.has(key)) {
-        filtered[key] = monthData[key];
-      }
-    }
-    return filtered;
-  });
+  // Filter out disabled categories from data for the chart (memoized)
+  const filteredData = useMemo(
+    () =>
+      data.map((monthData) => {
+        const filtered: MonthlyExpenseData = { month: monthData.month };
+        for (const key of Object.keys(monthData)) {
+          if (key === 'month') continue;
+          if (!disabledCategories.has(key)) {
+            filtered[key] = monthData[key];
+          }
+        }
+        return filtered;
+      }),
+    [data, disabledCategories]
+  );
 
   return (
     <div className='space-y-4'>

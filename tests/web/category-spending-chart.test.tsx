@@ -1,10 +1,10 @@
+/** @vitest-environment jsdom */
 /**
  * Tests for CategorySpendingChart component
  * Tests the stacked bar chart for monthly expenses by category
  */
 
 import { render, screen, fireEvent } from '@testing-library/react';
-/** @vitest-environment jsdom */
 import React from 'react';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 

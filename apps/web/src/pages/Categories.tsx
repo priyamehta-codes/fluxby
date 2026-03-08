@@ -281,20 +281,11 @@ export default function Categories() {
 
       if (!mounted) return;
 
-      // If we have saved collapsed IDs, compute expanded as all except those
+      // If we have saved collapsed IDs, store in ref to apply when categories load
       if (savedCollapsed && savedCollapsed.length > 0) {
-        setExpandedCategories((prev) => {
-          // This will be properly set once categories load
-          // For now, mark as "no collapsed saved" - handled in categories load effect
-          return prev;
-        });
-        // Store collapsed IDs temporarily to apply when categories load
-        setCollapsedLoaded(true);
-        // Store in ref to apply when categories load
         savedCollapsedRef.current = savedCollapsed;
-      } else {
-        setCollapsedLoaded(true);
       }
+      setCollapsedLoaded(true);
 
       if (savedMode) {
         setAmountMode(savedMode);
@@ -367,6 +358,7 @@ export default function Categories() {
     return () => {
       mounted = false;
     };
+    // Intentionally omitting dataService (stable) and seedCategories.length (would cause infinite loop)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSeedModalOpen, language]);
 
@@ -479,6 +471,10 @@ export default function Categories() {
       queryClient.invalidateQueries({
         queryKey: ['transactions', activeProfileId],
       });
+      // Also invalidate period stats since transaction categories changed
+      queryClient.invalidateQueries({
+        queryKey: ['categoryStatsByPeriod', activeProfileId],
+      });
       setShowProgressModal(false);
       setToast({
         message: `${result.updated} ${t.common.of} ${result.processed} ${t.categories.toastRulesApplied}`,
@@ -506,6 +502,10 @@ export default function Categories() {
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: ['transactions', activeProfileId],
+      });
+      // Also invalidate period stats since transaction categories changed
+      queryClient.invalidateQueries({
+        queryKey: ['categoryStatsByPeriod', activeProfileId],
       });
     },
   });
@@ -1738,6 +1738,9 @@ export default function Categories() {
                     {sortOptions.map((option) => (
                       <button
                         key={option.key}
+                        type='button'
+                        aria-label={`${t.addressBook?.sortBy || 'Sort by'}: ${option.label}`}
+                        aria-pressed={sortBy === option.key}
                         onClick={() => setSortBy(option.key)}
                         className={cn(
                           'relative z-10 rounded-md px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-colors',
