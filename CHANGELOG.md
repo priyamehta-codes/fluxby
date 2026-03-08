@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.8.2
+
+**Release Date:** 2026-03-08
+
+### Bug Fixes
+
+- **database:** resolve WASM memory access error in transactionAsync
+
+### Other Changes
+
+- fix formatting
+
+### Code Refactoring
+
+- **web:** improve transaction deletion architecture code quality
+
 ## v1.8.1
 
 **Release Date:** 2026-03-07

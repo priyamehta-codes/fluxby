@@ -1926,6 +1926,11 @@ export const en: LandingTranslationKeys = {
     updatesPage: {
       intro:
         "See what's new in Fluxby. Here you'll find all updates and new features.",
+      v182Date: 'March 8, 2026',
+      v182Title: 'Release 1.8.2',
+      v182Description: '1 bug fix.',
+      v182F1Title: 'Resolve WASM memory access error in transactionAsync',
+      v182F1Desc: 'Bugs eliminated, app improved.',
       v181Date: 'March 8, 2026',
       v181Title: 'Release 1.8.1',
       v181Description: 'New improvements and bug fixes.',
