@@ -1,5 +1,29 @@
 # Changelog
 
+## v1.9.0
+
+**Release Date:** 2026-03-08
+
+### Features
+
+- **web:** add category view enhancements with persistence
+- **web:** add category spending trend chart to Analytics page
+- **web:** add category view enhancements
+
+### Bug Fixes
+
+- **web:** improve CategorySpendingChart accessibility and add tests
+- **web:** improve accessibility and code quality in Categories page
+
+### Documentation
+
+- **nexus:** finalize category-spending-trend feature
+
+### Other Changes
+
+- remove file
+- update gitignore
+
 ## v1.8.2
 
 **Release Date:** 2026-03-08

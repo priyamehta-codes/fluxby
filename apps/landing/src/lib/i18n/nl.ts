@@ -2020,6 +2020,13 @@ export const nl: LandingTranslationKeys = {
     updatesPage: {
       intro:
         'Bekijk wat er nieuw is in Fluxby. Hier vind je alle updates en nieuwe features.',
+      v190Date: '8 maart 2026',
+      v190Title: 'Release 1.9.0',
+      v190Description: '3 nieuwe features en 2 bugfixes.',
+      v190F1Title: 'Nieuwe web app mogelijkheden',
+      v190F1Desc: '3 nieuwe features. Bekijk de release op GitHub!',
+      v190F2Title: 'Betere web ervaring',
+      v190F2Desc: '2 bugfixes. Bekijk de release op GitHub!',
       v182Date: '8 maart 2026',
       v182Title: 'Release 1.8.2',
       v182Description: '1 bugfix.',
