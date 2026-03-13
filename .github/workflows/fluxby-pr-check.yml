@@ -1,20 +1,72 @@
 name: 'Fluxby PR Check'
-description: 'Checks that Fluxby builds and passes tests for all platforms on every pull request.'
 
 on:
   pull_request:
-    paths:
-      - 'apps/tauri/**'
-      - 'apps/web/**'
-      - 'packages/**'
-      - '.github/workflows/tauri-*.yml'
+    branches: [main, develop]
+  push:
+    branches: [main, develop]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  build-check:
+  # Fast checks - runs on every PR
+  lint-test:
+    name: Lint, Typecheck & Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build packages (required for typecheck)
+        run: npm run build:packages
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Run tests
+        run: npm run test:run
+
+  # Check which paths changed for conditional Tauri builds
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      tauri: ${{ steps.filter.outputs.tauri }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check for Tauri-related changes
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            tauri:
+              - 'apps/tauri/**'
+              - 'apps/web/**'
+              - 'packages/**'
+              - '.github/workflows/tauri-*.yml'
+              - '.github/workflows/fluxby-pr-check.yml'
+
+  # Tauri build check - only for relevant paths
+  tauri-build:
+    name: Tauri Build (${{ matrix.platform }})
+    needs: [lint-test, changes]
+    if: needs.changes.outputs.tauri == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -48,11 +100,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build shared package
-        run: npm run build -w packages/shared
-
-      - name: Build database package
-        run: npm run build -w packages/database
+      - name: Build packages
+        run: npm run build:packages
 
       - name: Build web app
         run: npm run build:web
