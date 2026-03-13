@@ -33,23 +33,26 @@ const UpdatesContent = () => {
   const updatesPage = t.legal?.updatesPage;
 
   const releases = [
-        {
+    {
       version: '1.9.0',
       date: updatesPage?.v190Date || '8 maart 2026',
       title: updatesPage?.v190Title || 'Release 1.9.0',
       description:
-        updatesPage?.v190Description ||
-        '3 nieuwe features en 2 bugfixes.',
+        updatesPage?.v190Description || '3 nieuwe features en 2 bugfixes.',
       features: [
         {
           icon: Globe,
           title: updatesPage?.v190F1Title || 'Nieuwe web app mogelijkheden',
-          description: updatesPage?.v190F1Desc || '3 nieuwe features. Bekijk de release op GitHub!',
+          description:
+            updatesPage?.v190F1Desc ||
+            '3 nieuwe features. Bekijk de release op GitHub!',
         },
         {
           icon: Globe,
           title: updatesPage?.v190F2Title || 'Betere web ervaring',
-          description: updatesPage?.v190F2Desc || '2 bugfixes. Bekijk de release op GitHub!',
+          description:
+            updatesPage?.v190F2Desc ||
+            '2 bugfixes. Bekijk de release op GitHub!',
         },
       ],
     },

@@ -90,7 +90,7 @@ export function resetModuleInitState() {
 
 export function DatabaseProvider({ children }: DatabaseProviderProps) {
   const { t, language } = useLanguage();
-  const { isEncryptionEnabled, isUnlocked } = useEncryption();
+  const { isEncryptionEnabled, isUnlocked, encryptionKey } = useEncryption();
 
   // Initialize state from existing database if available
   const existingDb = getDatabaseInstance();
@@ -165,6 +165,15 @@ export function DatabaseProvider({ children }: DatabaseProviderProps) {
       return;
     }
 
+    // If encryption is enabled but key isn't ready yet, wait
+    // This prevents the "locked phase" issue - we need the key BEFORE creating the DB
+    if (isEncryptionEnabled && isUnlocked && !encryptionKey) {
+      devLog('Waiting for encryption key derivation...');
+      setInitStatus('Deriving encryption key...');
+      setIsLoading(true);
+      return;
+    }
+
     // If init already started by another mount, just wait for the factory's promise
     if (moduleInitStarted) {
       devLog(
@@ -191,6 +200,7 @@ export function DatabaseProvider({ children }: DatabaseProviderProps) {
     createDatabase({
       dbPath: 'fluxby.db',
       autoMigrate: true,
+      encryptionKey: encryptionKey ?? undefined,
     })
       .then((database) => {
         if (mountedRef.current) {
@@ -220,7 +230,7 @@ export function DatabaseProvider({ children }: DatabaseProviderProps) {
         clearTimeout(timeoutRef.current);
       }
     };
-  }, [isEncryptionEnabled, isUnlocked]);
+  }, [isEncryptionEnabled, isUnlocked, encryptionKey]);
 
   // Check if we're in Tauri
   const isTauri = typeof window !== 'undefined' && '__TAURI__' in window;
@@ -234,7 +244,9 @@ export function DatabaseProvider({ children }: DatabaseProviderProps) {
       hasDb: !!db,
       isEncryptionEnabled,
       isUnlocked,
+      hasEncryptionKey: !!encryptionKey,
       isWaitingForUnlock: isEncryptionEnabled && !isUnlocked,
+      isWaitingForKey: isEncryptionEnabled && isUnlocked && !encryptionKey,
     });
   }
 

@@ -32,6 +32,7 @@ import {
 // Storage keys (used as OPFS filenames)
 const PASSWORD_HASH_KEY = 'fluxby.passwordHash';
 const PASSWORD_SALT_KEY = 'fluxby.passwordSalt';
+const ENCRYPTION_SALT_KEY = 'fluxby.encryptionSalt';
 
 // Simple password hashing using Web Crypto API
 async function hashPassword(
@@ -85,6 +86,47 @@ function hexToUint8Array(hex: string): Uint8Array {
   return bytes;
 }
 
+function uint8ArrayToHex(bytes: Uint8Array): string {
+  return Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+/**
+ * Derive a 256-bit encryption key from password using PBKDF2.
+ * This is separate from the password hash to allow for different purposes.
+ */
+async function deriveEncryptionKeyFromPassword(
+  password: string,
+  salt: Uint8Array
+): Promise<Uint8Array> {
+  const encoder = new TextEncoder();
+  const passwordBuffer = encoder.encode(password);
+
+  // Import password as key material
+  const keyMaterial = await crypto.subtle.importKey(
+    'raw',
+    passwordBuffer,
+    'PBKDF2',
+    false,
+    ['deriveBits']
+  );
+
+  // Derive 256 bits (32 bytes) for AES-256
+  const derivedBits = await crypto.subtle.deriveBits(
+    {
+      name: 'PBKDF2',
+      salt: salt as BufferSource,
+      iterations: 100000,
+      hash: 'SHA-256',
+    },
+    keyMaterial,
+    256
+  );
+
+  return new Uint8Array(derivedBits);
+}
+
 // Helper to get initial value from OPFS cache
 function getInitialHash(): string | null {
   if (typeof window === 'undefined') return null;
@@ -102,12 +144,22 @@ function getInitialSalt(): string | null {
   return null;
 }
 
+function getInitialEncryptionSalt(): string | null {
+  if (typeof window === 'undefined') return null;
+  if (isSettingsCacheInitialized()) {
+    return readFromOPFSSync<string>(ENCRYPTION_SALT_KEY);
+  }
+  return null;
+}
+
 interface EncryptionContextType {
   /** Whether password protection is set up (kept as isEncryptionEnabled for compatibility) */
   isEncryptionEnabled: boolean;
   /** Whether the app is currently unlocked */
   isUnlocked: boolean;
-  /** Master key - always null now (no database encryption) */
+  /** Database encryption key (32 bytes) - derived from password, cleared on lock */
+  encryptionKey: Uint8Array | null;
+  /** @deprecated Use encryptionKey instead */
   masterKey: Uint8Array | null;
   /** Set up password protection */
   setupEncryption: (password: string) => Promise<void>;
@@ -148,6 +200,11 @@ export function EncryptionProvider({ children }: EncryptionProviderProps) {
   const [passwordSalt, setPasswordSalt] = useState<string | null>(
     getInitialSalt
   );
+  const [encryptionSalt, setEncryptionSalt] = useState<string | null>(
+    getInitialEncryptionSalt
+  );
+  // The actual 32-byte encryption key - only in memory, cleared on lock
+  const [encryptionKey, setEncryptionKey] = useState<Uint8Array | null>(null);
   const mountedRef = useRef(true);
 
   // Load from OPFS if cache wasn't initialized
@@ -158,10 +215,12 @@ export function EncryptionProvider({ children }: EncryptionProviderProps) {
       Promise.all([
         readFromOPFS<string>(PASSWORD_HASH_KEY),
         readFromOPFS<string>(PASSWORD_SALT_KEY),
-      ]).then(([hash, salt]) => {
+        readFromOPFS<string>(ENCRYPTION_SALT_KEY),
+      ]).then(([hash, salt, encSalt]) => {
         if (mountedRef.current) {
           if (hash) setPasswordHash(hash);
           if (salt) setPasswordSalt(salt);
+          if (encSalt) setEncryptionSalt(encSalt);
         }
       });
     }
@@ -183,12 +242,22 @@ export function EncryptionProvider({ children }: EncryptionProviderProps) {
   const setupEncryption = useCallback(async (password: string) => {
     const { hash, salt } = await hashPassword(password);
 
+    // Generate a separate salt for encryption key derivation
+    const encSaltBytes = crypto.getRandomValues(new Uint8Array(16));
+    const encSaltHex = uint8ArrayToHex(encSaltBytes);
+
+    // Derive the encryption key
+    const key = await deriveEncryptionKeyFromPassword(password, encSaltBytes);
+
     // Store in OPFS
     await writeToOPFSWithCache(PASSWORD_HASH_KEY, hash);
     await writeToOPFSWithCache(PASSWORD_SALT_KEY, salt);
+    await writeToOPFSWithCache(ENCRYPTION_SALT_KEY, encSaltHex);
 
     setPasswordHash(hash);
     setPasswordSalt(salt);
+    setEncryptionSalt(encSaltHex);
+    setEncryptionKey(key);
     setIsUnlocked(true);
   }, []);
 
@@ -204,6 +273,15 @@ export function EncryptionProvider({ children }: EncryptionProviderProps) {
         const { hash } = await hashPassword(password, salt);
 
         if (hash === passwordHash) {
+          // Derive the encryption key
+          if (encryptionSalt) {
+            const encSaltBytes = hexToUint8Array(encryptionSalt);
+            const key = await deriveEncryptionKeyFromPassword(
+              password,
+              encSaltBytes
+            );
+            setEncryptionKey(key);
+          }
           setIsUnlocked(true);
           return true;
         }
@@ -212,12 +290,14 @@ export function EncryptionProvider({ children }: EncryptionProviderProps) {
         return false;
       }
     },
-    [passwordHash, passwordSalt]
+    [passwordHash, passwordSalt, encryptionSalt]
   );
 
   // Lock the app
   const lock = useCallback(() => {
     setIsUnlocked(false);
+    // Clear the encryption key from memory for security
+    setEncryptionKey(null);
   }, []);
 
   // Change password
@@ -240,12 +320,23 @@ export function EncryptionProvider({ children }: EncryptionProviderProps) {
         const { hash: newHash, salt: newSalt } =
           await hashPassword(newPassword);
 
+        // Generate new encryption salt and derive new key
+        const newEncSaltBytes = crypto.getRandomValues(new Uint8Array(16));
+        const newEncSaltHex = uint8ArrayToHex(newEncSaltBytes);
+        const newKey = await deriveEncryptionKeyFromPassword(
+          newPassword,
+          newEncSaltBytes
+        );
+
         // Store in OPFS
         await writeToOPFSWithCache(PASSWORD_HASH_KEY, newHash);
         await writeToOPFSWithCache(PASSWORD_SALT_KEY, newSalt);
+        await writeToOPFSWithCache(ENCRYPTION_SALT_KEY, newEncSaltHex);
 
         setPasswordHash(newHash);
         setPasswordSalt(newSalt);
+        setEncryptionSalt(newEncSaltHex);
+        setEncryptionKey(newKey);
 
         return true;
       } catch {
@@ -285,9 +376,12 @@ export function EncryptionProvider({ children }: EncryptionProviderProps) {
       // Delete from OPFS
       await deleteFromOPFSWithCache(PASSWORD_HASH_KEY);
       await deleteFromOPFSWithCache(PASSWORD_SALT_KEY);
+      await deleteFromOPFSWithCache(ENCRYPTION_SALT_KEY);
 
       setPasswordHash(null);
       setPasswordSalt(null);
+      setEncryptionSalt(null);
+      setEncryptionKey(null);
       setIsUnlocked(false);
       return true;
     },
@@ -298,7 +392,8 @@ export function EncryptionProvider({ children }: EncryptionProviderProps) {
     () => ({
       isEncryptionEnabled,
       isUnlocked,
-      masterKey: null, // No database encryption
+      encryptionKey,
+      masterKey: encryptionKey, // Alias for backwards compatibility
       setupEncryption,
       unlock,
       lock,
@@ -309,6 +404,7 @@ export function EncryptionProvider({ children }: EncryptionProviderProps) {
     [
       isEncryptionEnabled,
       isUnlocked,
+      encryptionKey,
       setupEncryption,
       unlock,
       lock,
