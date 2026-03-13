@@ -1,15 +1,17 @@
 /* eslint-disable react-refresh/only-export-components */
 /**
- * Password Protection Context
+ * Password Protection & Encryption Context
  *
- * This context manages password-based UI lock/unlock for the app.
- * NOTE: Database encryption has been removed for simplicity.
- * The password only protects the UI - data is stored unencrypted in OPFS.
+ * Uses Wrapped Master Key architecture for secure password changes:
+ * 1. A random 256-bit master key encrypts the database
+ * 2. The master key is "wrapped" (encrypted) with a password-derived key
+ * 3. Password change re-wraps the SAME master key with new password
  *
- * The password is verified using PBKDF2 key derivation - we store a wrapped
- * "dummy" key that can only be unwrapped with the correct password.
+ * This allows password changes without re-encrypting the entire database.
  *
- * Settings are stored in OPFS for persistence (survives localStorage clearing).
+ * Key hierarchy:
+ * - Master Key (random, encrypts DB) → wrapped by →
+ * - Wrapping Key (derived from password via PBKDF2)
  */
 import {
   createContext,
@@ -27,11 +29,19 @@ import {
   deleteFromOPFSWithCache,
   isSettingsCacheInitialized,
   readFromOPFS,
+  generateMasterKey,
+  wrapMasterKey,
+  unwrapMasterKey,
+  serializeWrappedKey,
+  deserializeWrappedKey,
+  secureClear,
 } from '@fluxby/database';
 
 // Storage keys (used as OPFS filenames)
 const PASSWORD_HASH_KEY = 'fluxby.passwordHash';
 const PASSWORD_SALT_KEY = 'fluxby.passwordSalt';
+const WRAPPED_KEY_KEY = 'fluxby.wrappedMasterKey'; // The encrypted master key
+// Legacy key - kept for migration detection only
 const ENCRYPTION_SALT_KEY = 'fluxby.encryptionSalt';
 
 // Simple password hashing using Web Crypto API
@@ -86,47 +96,6 @@ function hexToUint8Array(hex: string): Uint8Array {
   return bytes;
 }
 
-function uint8ArrayToHex(bytes: Uint8Array): string {
-  return Array.from(bytes)
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
-}
-
-/**
- * Derive a 256-bit encryption key from password using PBKDF2.
- * This is separate from the password hash to allow for different purposes.
- */
-async function deriveEncryptionKeyFromPassword(
-  password: string,
-  salt: Uint8Array
-): Promise<Uint8Array> {
-  const encoder = new TextEncoder();
-  const passwordBuffer = encoder.encode(password);
-
-  // Import password as key material
-  const keyMaterial = await crypto.subtle.importKey(
-    'raw',
-    passwordBuffer,
-    'PBKDF2',
-    false,
-    ['deriveBits']
-  );
-
-  // Derive 256 bits (32 bytes) for AES-256
-  const derivedBits = await crypto.subtle.deriveBits(
-    {
-      name: 'PBKDF2',
-      salt: salt as BufferSource,
-      iterations: 100000,
-      hash: 'SHA-256',
-    },
-    keyMaterial,
-    256
-  );
-
-  return new Uint8Array(derivedBits);
-}
-
 // Helper to get initial value from OPFS cache
 function getInitialHash(): string | null {
   if (typeof window === 'undefined') return null;
@@ -144,7 +113,16 @@ function getInitialSalt(): string | null {
   return null;
 }
 
-function getInitialEncryptionSalt(): string | null {
+function getInitialWrappedKey(): string | null {
+  if (typeof window === 'undefined') return null;
+  if (isSettingsCacheInitialized()) {
+    return readFromOPFSSync<string>(WRAPPED_KEY_KEY);
+  }
+  return null;
+}
+
+// Legacy migration: check if user has old encryption salt (password-derived key)
+function getInitialLegacyEncryptionSalt(): string | null {
   if (typeof window === 'undefined') return null;
   if (isSettingsCacheInitialized()) {
     return readFromOPFSSync<string>(ENCRYPTION_SALT_KEY);
@@ -200,10 +178,15 @@ export function EncryptionProvider({ children }: EncryptionProviderProps) {
   const [passwordSalt, setPasswordSalt] = useState<string | null>(
     getInitialSalt
   );
-  const [encryptionSalt, setEncryptionSalt] = useState<string | null>(
-    getInitialEncryptionSalt
+  // Serialized wrapped master key (JSON string)
+  const [wrappedKeyData, setWrappedKeyData] = useState<string | null>(
+    getInitialWrappedKey
   );
-  // The actual 32-byte encryption key - only in memory, cleared on lock
+  // Legacy encryption salt - only used for migration detection
+  const [legacyEncryptionSalt, setLegacyEncryptionSalt] = useState<
+    string | null
+  >(getInitialLegacyEncryptionSalt);
+  // The actual 32-byte master key - only in memory, cleared on lock
   const [encryptionKey, setEncryptionKey] = useState<Uint8Array | null>(null);
   const mountedRef = useRef(true);
 
@@ -215,12 +198,14 @@ export function EncryptionProvider({ children }: EncryptionProviderProps) {
       Promise.all([
         readFromOPFS<string>(PASSWORD_HASH_KEY),
         readFromOPFS<string>(PASSWORD_SALT_KEY),
-        readFromOPFS<string>(ENCRYPTION_SALT_KEY),
-      ]).then(([hash, salt, encSalt]) => {
+        readFromOPFS<string>(WRAPPED_KEY_KEY),
+        readFromOPFS<string>(ENCRYPTION_SALT_KEY), // Legacy check
+      ]).then(([hash, salt, wrapped, legacySalt]) => {
         if (mountedRef.current) {
           if (hash) setPasswordHash(hash);
           if (salt) setPasswordSalt(salt);
-          if (encSalt) setEncryptionSalt(encSalt);
+          if (wrapped) setWrappedKeyData(wrapped);
+          if (legacySalt) setLegacyEncryptionSalt(legacySalt);
         }
       });
     }
@@ -234,30 +219,33 @@ export function EncryptionProvider({ children }: EncryptionProviderProps) {
   const isEncryptionEnabled = passwordHash !== null;
 
   // Auto-unlock in development mode for easier debugging
+  // Only auto-unlock if no encryption is configured (no password hash)
   const [isUnlocked, setIsUnlocked] = useState(() => {
-    return import.meta.env.DEV;
+    return import.meta.env.DEV && !getInitialHash();
   });
 
   // Set up password protection
   const setupEncryption = useCallback(async (password: string) => {
+    // 1. Hash password for verification
     const { hash, salt } = await hashPassword(password);
 
-    // Generate a separate salt for encryption key derivation
-    const encSaltBytes = crypto.getRandomValues(new Uint8Array(16));
-    const encSaltHex = uint8ArrayToHex(encSaltBytes);
+    // 2. Generate random master key (this encrypts the database)
+    const masterKeyBytes = generateMasterKey();
 
-    // Derive the encryption key
-    const key = await deriveEncryptionKeyFromPassword(password, encSaltBytes);
+    // 3. Wrap master key with password (internally derives wrapping key)
+    const wrapped = await wrapMasterKey(masterKeyBytes, password);
+    const wrappedSerialized = serializeWrappedKey(wrapped);
 
-    // Store in OPFS
+    // 4. Store in OPFS
     await writeToOPFSWithCache(PASSWORD_HASH_KEY, hash);
     await writeToOPFSWithCache(PASSWORD_SALT_KEY, salt);
-    await writeToOPFSWithCache(ENCRYPTION_SALT_KEY, encSaltHex);
+    await writeToOPFSWithCache(WRAPPED_KEY_KEY, wrappedSerialized);
 
+    // 5. Update state
     setPasswordHash(hash);
     setPasswordSalt(salt);
-    setEncryptionSalt(encSaltHex);
-    setEncryptionKey(key);
+    setWrappedKeyData(wrappedSerialized);
+    setEncryptionKey(masterKeyBytes);
     setIsUnlocked(true);
   }, []);
 
@@ -269,46 +257,76 @@ export function EncryptionProvider({ children }: EncryptionProviderProps) {
       }
 
       try {
+        // Verify password hash
         const salt = hexToUint8Array(passwordSalt);
         const { hash } = await hashPassword(password, salt);
 
-        if (hash === passwordHash) {
-          // Derive the encryption key
-          if (encryptionSalt) {
-            const encSaltBytes = hexToUint8Array(encryptionSalt);
-            const key = await deriveEncryptionKeyFromPassword(
-              password,
-              encSaltBytes
-            );
-            setEncryptionKey(key);
-          }
-          setIsUnlocked(true);
-          return true;
+        if (hash !== passwordHash) {
+          return false;
         }
-        return false;
+
+        // Unwrap the master key
+        if (wrappedKeyData) {
+          // Normal flow: unwrap the master key with password
+          const wrapped = deserializeWrappedKey(wrappedKeyData);
+          const masterKeyBytes = await unwrapMasterKey(wrapped, password);
+          setEncryptionKey(masterKeyBytes);
+        } else if (legacyEncryptionSalt) {
+          // Legacy migration: user has old password-derived key architecture
+          // Generate new master key and wrap it with current password
+          console.warn(
+            'Migrating from legacy password-derived key to wrapped master key'
+          );
+          const masterKeyBytes = generateMasterKey();
+          const wrapped = await wrapMasterKey(masterKeyBytes, password);
+          const wrappedSerialized = serializeWrappedKey(wrapped);
+
+          // Store wrapped key and remove legacy salt
+          await writeToOPFSWithCache(WRAPPED_KEY_KEY, wrappedSerialized);
+          await deleteFromOPFSWithCache(ENCRYPTION_SALT_KEY);
+
+          setWrappedKeyData(wrappedSerialized);
+          setLegacyEncryptionSalt(null);
+          setEncryptionKey(masterKeyBytes);
+        } else {
+          // No wrapped key and no legacy salt - first time user, generate new key
+          const masterKeyBytes = generateMasterKey();
+          const wrapped = await wrapMasterKey(masterKeyBytes, password);
+          const wrappedSerialized = serializeWrappedKey(wrapped);
+
+          await writeToOPFSWithCache(WRAPPED_KEY_KEY, wrappedSerialized);
+          setWrappedKeyData(wrappedSerialized);
+          setEncryptionKey(masterKeyBytes);
+        }
+
+        setIsUnlocked(true);
+        return true;
       } catch {
         return false;
       }
     },
-    [passwordHash, passwordSalt, encryptionSalt]
+    [passwordHash, passwordSalt, wrappedKeyData, legacyEncryptionSalt]
   );
 
   // Lock the app
   const lock = useCallback(() => {
-    setIsUnlocked(false);
-    // Clear the encryption key from memory for security
+    // Securely zero the key bytes before releasing reference
+    if (encryptionKey) {
+      secureClear(encryptionKey);
+    }
     setEncryptionKey(null);
-  }, []);
+    setIsUnlocked(false);
+  }, [encryptionKey]);
 
-  // Change password
+  // Change password - re-wraps the SAME master key with new password
   const changePassword = useCallback(
     async (currentPassword: string, newPassword: string): Promise<boolean> => {
-      if (!passwordHash || !passwordSalt) {
+      if (!passwordHash || !passwordSalt || !encryptionKey) {
         return false;
       }
 
       try {
-        // Verify current password
+        // 1. Verify current password
         const salt = hexToUint8Array(passwordSalt);
         const { hash: currentHash } = await hashPassword(currentPassword, salt);
 
@@ -316,34 +334,33 @@ export function EncryptionProvider({ children }: EncryptionProviderProps) {
           return false;
         }
 
-        // Set new password
+        // 2. Generate new password hash for authentication
         const { hash: newHash, salt: newSalt } =
           await hashPassword(newPassword);
 
-        // Generate new encryption salt and derive new key
-        const newEncSaltBytes = crypto.getRandomValues(new Uint8Array(16));
-        const newEncSaltHex = uint8ArrayToHex(newEncSaltBytes);
-        const newKey = await deriveEncryptionKeyFromPassword(
-          newPassword,
-          newEncSaltBytes
-        );
+        // 3. Re-wrap the SAME master key with new password
+        // This is the key insight: the master key never changes,
+        // only the "wrapper" (password-derived key) changes
+        const newWrapped = await wrapMasterKey(encryptionKey, newPassword);
+        const newWrappedSerialized = serializeWrappedKey(newWrapped);
 
-        // Store in OPFS
+        // 4. Store updated password hash and wrapped key
         await writeToOPFSWithCache(PASSWORD_HASH_KEY, newHash);
         await writeToOPFSWithCache(PASSWORD_SALT_KEY, newSalt);
-        await writeToOPFSWithCache(ENCRYPTION_SALT_KEY, newEncSaltHex);
+        await writeToOPFSWithCache(WRAPPED_KEY_KEY, newWrappedSerialized);
 
+        // 5. Update state (master key stays the same!)
         setPasswordHash(newHash);
         setPasswordSalt(newSalt);
-        setEncryptionSalt(newEncSaltHex);
-        setEncryptionKey(newKey);
+        setWrappedKeyData(newWrappedSerialized);
+        // Note: encryptionKey is NOT changed - that's the whole point!
 
         return true;
       } catch {
         return false;
       }
     },
-    [passwordHash, passwordSalt]
+    [passwordHash, passwordSalt, encryptionKey]
   );
 
   // Verify password
@@ -376,16 +393,24 @@ export function EncryptionProvider({ children }: EncryptionProviderProps) {
       // Delete from OPFS
       await deleteFromOPFSWithCache(PASSWORD_HASH_KEY);
       await deleteFromOPFSWithCache(PASSWORD_SALT_KEY);
+      await deleteFromOPFSWithCache(WRAPPED_KEY_KEY);
+      // Also clean up any legacy salt
       await deleteFromOPFSWithCache(ENCRYPTION_SALT_KEY);
+
+      // Securely clear the master key
+      if (encryptionKey) {
+        secureClear(encryptionKey);
+      }
 
       setPasswordHash(null);
       setPasswordSalt(null);
-      setEncryptionSalt(null);
+      setWrappedKeyData(null);
+      setLegacyEncryptionSalt(null);
       setEncryptionKey(null);
       setIsUnlocked(false);
       return true;
     },
-    [verifyPasswordFn]
+    [verifyPasswordFn, encryptionKey]
   );
 
   const value = useMemo(
