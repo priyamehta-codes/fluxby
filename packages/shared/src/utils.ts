@@ -76,16 +76,39 @@ export function getMonthName(
 }
 
 /**
- * Generate a hash for duplicate detection
+ * Generate a SHA-256 based hash for duplicate detection
+ * Uses first 64 bits (16 hex chars) of SHA-256 for collision resistance
+ * Works in both browser (Web Crypto API) and Node.js
  */
-export function generateTransactionHash(
+export async function generateTransactionHash(
+  date: string,
+  amount: number,
+  description: string,
+  iban: string
+): Promise<string> {
+  const data = `${date}|${amount}|${description}|${iban}`;
+  const encoder = new TextEncoder();
+  const buffer = encoder.encode(data);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  // Return first 16 hex chars (64 bits) - vastly more collision-resistant than 32-bit
+  return hashArray
+    .slice(0, 8)
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+/**
+ * Legacy synchronous hash function for backwards compatibility with migrations
+ * @deprecated Use generateTransactionHash for new imports
+ */
+export function generateTransactionHashLegacy(
   date: string,
   amount: number,
   description: string,
   iban: string
 ): string {
   const data = `${date}|${amount}|${description}|${iban}`;
-  // Simple hash function for deduplication
   let hash = 0;
   for (let i = 0; i < data.length; i++) {
     const char = data.charCodeAt(i);

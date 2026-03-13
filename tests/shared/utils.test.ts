@@ -8,6 +8,7 @@ import {
   formatPercentage,
   getMonthName,
   generateTransactionHash,
+  generateTransactionHashLegacy,
   truncate,
   calculatePercentageChange,
   groupBy,
@@ -148,14 +149,14 @@ describe('getMonthName', () => {
 });
 
 describe('generateTransactionHash', () => {
-  it('generates consistent hashes for same input', () => {
-    const hash1 = generateTransactionHash(
+  it('generates consistent hashes for same input', async () => {
+    const hash1 = await generateTransactionHash(
       '2024-01-01',
       100,
       'Test',
       'NL00TEST'
     );
-    const hash2 = generateTransactionHash(
+    const hash2 = await generateTransactionHash(
       '2024-01-01',
       100,
       'Test',
@@ -164,14 +165,14 @@ describe('generateTransactionHash', () => {
     expect(hash1).toBe(hash2);
   });
 
-  it('generates different hashes for different inputs', () => {
-    const hash1 = generateTransactionHash(
+  it('generates different hashes for different inputs', async () => {
+    const hash1 = await generateTransactionHash(
       '2024-01-01',
       100,
       'Test',
       'NL00TEST'
     );
-    const hash2 = generateTransactionHash(
+    const hash2 = await generateTransactionHash(
       '2024-01-02',
       100,
       'Test',
@@ -180,8 +181,31 @@ describe('generateTransactionHash', () => {
     expect(hash1).not.toBe(hash2);
   });
 
+  it('returns a hex string of 16 characters', async () => {
+    const hash = await generateTransactionHash('2024-01-01', 100, 'Test', 'NL00TEST');
+    expect(hash).toMatch(/^[0-9a-f]{16}$/);
+  });
+});
+
+describe('generateTransactionHashLegacy', () => {
+  it('generates consistent hashes for same input', () => {
+    const hash1 = generateTransactionHashLegacy(
+      '2024-01-01',
+      100,
+      'Test',
+      'NL00TEST'
+    );
+    const hash2 = generateTransactionHashLegacy(
+      '2024-01-01',
+      100,
+      'Test',
+      'NL00TEST'
+    );
+    expect(hash1).toBe(hash2);
+  });
+
   it('returns a hex string', () => {
-    const hash = generateTransactionHash('2024-01-01', 100, 'Test', 'NL00TEST');
+    const hash = generateTransactionHashLegacy('2024-01-01', 100, 'Test', 'NL00TEST');
     expect(hash).toMatch(/^[0-9a-f]+$/);
   });
 });

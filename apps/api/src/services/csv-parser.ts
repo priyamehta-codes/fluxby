@@ -160,15 +160,16 @@ function parseFlexibleAmount(value: string): number | null {
 /**
  * Convert generic CSV rows to transactions using column mapping
  */
-export function convertGenericToTransactions(
+export async function convertGenericToTransactions(
   rows: Record<string, string>[],
   mapping: ColumnMapping,
   accountId: number
-): { transactions: TransactionCreate[]; errors: ParsedGenericTransaction[] } {
+): Promise<{ transactions: TransactionCreate[]; errors: ParsedGenericTransaction[] }> {
   const transactions: TransactionCreate[] = [];
   const errors: ParsedGenericTransaction[] = [];
 
-  rows.forEach((row, index) => {
+  for (let index = 0; index < rows.length; index++) {
+    const row = rows[index];
     const dateStr = parseFlexibleDate(row[mapping.date]);
     let amount = parseFlexibleAmount(row[mapping.amount]);
     const description = row[mapping.description]?.trim() || '';
@@ -218,7 +219,7 @@ export function convertGenericToTransactions(
         rawData: row,
         error: 'invalidDate',
       });
-      return;
+      continue;
     }
 
     if (amount === null) {
@@ -233,7 +234,7 @@ export function convertGenericToTransactions(
         rawData: row,
         error: 'invalidAmount',
       });
-      return;
+      continue;
     }
 
     // Get payment method from mapping or default to 'overig'
@@ -271,7 +272,7 @@ export function convertGenericToTransactions(
     const type: 'income' | 'expense' | 'transfer' =
       amount >= 0 ? 'income' : 'expense';
     // Use own IBAN + opposing IBAN in hash for uniqueness
-    const importHash = generateTransactionHash(
+    const importHash = await generateTransactionHash(
       dateStr,
       amount,
       notes || description,
@@ -297,7 +298,7 @@ export function convertGenericToTransactions(
       rawData: JSON.stringify(row),
       importHash,
     });
-  });
+  }
 
   return { transactions, errors };
 }
@@ -359,11 +360,12 @@ function getPaymentMethod(code: string, mutatiesoort: string): string {
   return codeMap[code] || mutatiesoort?.toLowerCase() || 'overig';
 }
 
-export function convertINGToTransactions(
+export async function convertINGToTransactions(
   ingTransactions: INGTransaction[],
   accountId: number
-): TransactionCreate[] {
-  return ingTransactions.map((ing) => {
+): Promise<TransactionCreate[]> {
+  const results: TransactionCreate[] = [];
+  for (const ing of ingTransactions) {
     const absAmount = parseEuropeanNumber(ing.bedrag);
     const isExpense = ing.afBij === 'Af';
     const amount = isExpense ? -absAmount : absAmount;
@@ -388,14 +390,14 @@ export function convertINGToTransactions(
     }
 
     // Generate hash for duplicate detection
-    const importHash = generateTransactionHash(
+    const importHash = await generateTransactionHash(
       dateStr,
       amount,
       ing.mededelingen || ing.naamOmschrijving,
       ing.rekening
     );
 
-    return {
+    results.push({
       date: dateStr,
       amount,
       type,
@@ -410,8 +412,9 @@ export function convertINGToTransactions(
       paymentMethod,
       rawData: JSON.stringify(ing),
       importHash,
-    };
-  });
+    });
+  }
+  return results;
 }
 
 export function detectDuplicates(

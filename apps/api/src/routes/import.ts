@@ -322,7 +322,7 @@ router.post('/csv', upload.single('file'), async (req, res) => {
     }
 
     // Convert to our transaction format
-    const transactions = convertINGToTransactions(ingTransactions, account.id);
+    const transactions = await convertINGToTransactions(ingTransactions, account.id);
 
     // Skip any entries that already exist (scoped to profile)
     const existingHashes = getExistingImportHashes(profileId);
@@ -1007,7 +1007,7 @@ router.post('/generic/import', upload.single('file'), async (req, res) => {
 
       // Use the conversion function for this single row
       const { transactions: rowTx, errors: rowErrors } =
-        convertGenericToTransactions([row], mapping, accountId);
+        await convertGenericToTransactions([row], mapping, accountId);
 
       // Adjust row indices in errors
       for (const err of rowErrors) {

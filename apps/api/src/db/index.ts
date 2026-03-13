@@ -2,7 +2,7 @@ import Database, { type Database as DatabaseType } from 'better-sqlite3';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { generateTransactionHash } from '@fluxby/shared';
+import { generateTransactionHashLegacy } from '@fluxby/shared';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -588,7 +588,8 @@ function backfillTransactionImportHashes(): void {
   const tx = db.transaction(() => {
     for (const row of rows) {
       const iban = row.iban || '';
-      const baseHash = generateTransactionHash(
+      // Use legacy hash for migration consistency with existing data
+      const baseHash = generateTransactionHashLegacy(
         row.date,
         Math.abs(Number(row.amount) || 0),
         row.description || '',

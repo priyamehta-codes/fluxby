@@ -422,9 +422,9 @@ describe('convertToTransactions', () => {
     ...overrides,
   });
 
-  it('converts parsed transactions to TransactionCreate objects', () => {
+  it('converts parsed transactions to TransactionCreate objects', async () => {
     const parsed = [createParsedTransaction()];
-    const result = convertToTransactions(
+    const result = await convertToTransactions(
       parsed,
       'account-123',
       'NL00TEST',
@@ -438,9 +438,9 @@ describe('convertToTransactions', () => {
     expect(result[0].accountId).toBe('account-123');
   });
 
-  it('sets type to income for positive amounts', () => {
+  it('sets type to income for positive amounts', async () => {
     const parsed = [createParsedTransaction({ amount: 500 })];
-    const result = convertToTransactions(
+    const result = await convertToTransactions(
       parsed,
       'account-123',
       'NL00TEST',
@@ -449,9 +449,9 @@ describe('convertToTransactions', () => {
     expect(result[0].type).toBe('income');
   });
 
-  it('sets type to expense for negative amounts', () => {
+  it('sets type to expense for negative amounts', async () => {
     const parsed = [createParsedTransaction({ amount: -500 })];
-    const result = convertToTransactions(
+    const result = await convertToTransactions(
       parsed,
       'account-123',
       'NL00TEST',
@@ -460,12 +460,12 @@ describe('convertToTransactions', () => {
     expect(result[0].type).toBe('expense');
   });
 
-  it('filters out transactions with errors', () => {
+  it('filters out transactions with errors', async () => {
     const parsed = [
       createParsedTransaction({ error: 'Invalid date' }),
       createParsedTransaction({ amount: 200 }),
     ];
-    const result = convertToTransactions(
+    const result = await convertToTransactions(
       parsed,
       'account-123',
       'NL00TEST',
@@ -475,14 +475,14 @@ describe('convertToTransactions', () => {
     expect(result[0].amount).toBe(200);
   });
 
-  it('includes opposing account info', () => {
+  it('includes opposing account info', async () => {
     const parsed = [
       createParsedTransaction({
         iban: 'NL91ABNA0417164300',
         counterparty: 'Albert Heijn',
       }),
     ];
-    const result = convertToTransactions(
+    const result = await convertToTransactions(
       parsed,
       'account-123',
       'NL00TEST',
@@ -492,9 +492,9 @@ describe('convertToTransactions', () => {
     expect(result[0].opposingAccountName).toBe('Albert Heijn');
   });
 
-  it('includes balance after transaction', () => {
+  it('includes balance after transaction', async () => {
     const parsed = [createParsedTransaction({ balance: 1234.56 })];
-    const result = convertToTransactions(
+    const result = await convertToTransactions(
       parsed,
       'account-123',
       'NL00TEST',
@@ -503,9 +503,9 @@ describe('convertToTransactions', () => {
     expect(result[0].balanceAfter).toBe(1234.56);
   });
 
-  it('generates import hash for deduplication', () => {
+  it('generates import hash for deduplication', async () => {
     const parsed = [createParsedTransaction()];
-    const result = convertToTransactions(
+    const result = await convertToTransactions(
       parsed,
       'account-123',
       'NL00TEST',
@@ -515,10 +515,10 @@ describe('convertToTransactions', () => {
     expect(result[0].importHash).toMatch(/^[0-9a-f]+$/);
   });
 
-  it('includes raw data as JSON string', () => {
+  it('includes raw data as JSON string', async () => {
     const rawData = { Column1: 'value1', Column2: 'value2' };
     const parsed = [createParsedTransaction({ rawData })];
-    const result = convertToTransactions(
+    const result = await convertToTransactions(
       parsed,
       'account-123',
       'NL00TEST',
@@ -527,9 +527,9 @@ describe('convertToTransactions', () => {
     expect(result[0].rawData).toBe(JSON.stringify(rawData));
   });
 
-  it('sets merchantName from counterparty', () => {
+  it('sets merchantName from counterparty', async () => {
     const parsed = [createParsedTransaction({ counterparty: 'IKEA' })];
-    const result = convertToTransactions(
+    const result = await convertToTransactions(
       parsed,
       'account-123',
       'NL00TEST',

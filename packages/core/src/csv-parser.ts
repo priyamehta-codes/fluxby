@@ -201,37 +201,40 @@ export function parseWithMapping(
 /**
  * Convert parsed transactions to TransactionCreate objects
  */
-export function convertToTransactions(
+export async function convertToTransactions(
   parsed: ParsedTransaction[],
   accountId: string,
   accountIban: string,
   _profileId: string
-): TransactionCreate[] {
-  return parsed
-    .filter((t) => !t.error)
-    .map((t) => {
-      const type: 'income' | 'expense' | 'transfer' =
-        t.amount > 0 ? 'income' : 'expense';
+): Promise<TransactionCreate[]> {
+  const filtered = parsed.filter((t) => !t.error);
+  const results: TransactionCreate[] = [];
 
-      return {
-        date: t.date,
-        amount: t.amount,
-        type,
-        description: t.description,
-        merchantName: t.counterparty || null,
-        accountId: accountId,
-        opposingAccountIban: t.iban,
-        opposingAccountName: t.counterparty,
-        balanceAfter: t.balance,
-        rawData: JSON.stringify(t.rawData),
-        importHash: generateTransactionHash(
-          t.date,
-          t.amount,
-          t.description,
-          accountIban
-        ),
-      };
+  for (const t of filtered) {
+    const type: 'income' | 'expense' | 'transfer' =
+      t.amount > 0 ? 'income' : 'expense';
+
+    results.push({
+      date: t.date,
+      amount: t.amount,
+      type,
+      description: t.description,
+      merchantName: t.counterparty || null,
+      accountId: accountId,
+      opposingAccountIban: t.iban,
+      opposingAccountName: t.counterparty,
+      balanceAfter: t.balance,
+      rawData: JSON.stringify(t.rawData),
+      importHash: await generateTransactionHash(
+        t.date,
+        t.amount,
+        t.description,
+        accountIban
+      ),
     });
+  }
+
+  return results;
 }
 
 /**
