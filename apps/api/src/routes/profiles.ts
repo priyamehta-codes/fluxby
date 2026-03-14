@@ -1,7 +1,12 @@
 import { Router } from 'express';
 import { query, queryOne, run, runMany } from '../db/index.js';
-import type { Profile, ProfileCreate, ProfileType } from '@fluxby/shared';
+import type { Profile, ProfileType } from '@fluxby/shared';
 import { SEED_CATEGORIES, flattenCategoriesForDB } from '../db/seed-data.js';
+import {
+  validate,
+  createProfileSchema,
+  updateProfileSchema,
+} from '../middleware/validation.js';
 
 const router = Router();
 
@@ -124,28 +129,9 @@ router.get('/:id', (req, res) => {
  *       400:
  *         description: Validation error
  */
-router.post('/', (req, res) => {
+router.post('/', validate(createProfileSchema), (req, res) => {
   try {
-    const { name, type, avatarUrl } = req.body as ProfileCreate;
-
-    if (!name || typeof name !== 'string' || name.trim().length === 0) {
-      return res
-        .status(400)
-        .json({ success: false, error: 'Name is required' });
-    }
-
-    const validTypes: ProfileType[] = [
-      'personal',
-      'business',
-      'shared',
-      'savings',
-    ];
-    if (!type || !validTypes.includes(type)) {
-      return res.status(400).json({
-        success: false,
-        error: `Invalid type. Must be one of: ${validTypes.join(', ')}`,
-      });
-    }
+    const { name, type, avatarUrl } = req.body;
 
     const result = run(
       'INSERT INTO profiles (user_id, name, type, avatar_url) VALUES (1, ?, ?, ?)',
@@ -243,7 +229,7 @@ router.post('/', (req, res) => {
  *       404:
  *         description: Profile not found
  */
-router.patch('/:id', (req, res) => {
+router.patch('/:id', validate(updateProfileSchema), (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
     if (isNaN(id)) {
@@ -269,28 +255,11 @@ router.patch('/:id', (req, res) => {
     const params: unknown[] = [];
 
     if (name !== undefined) {
-      if (typeof name !== 'string' || name.trim().length === 0) {
-        return res
-          .status(400)
-          .json({ success: false, error: 'Name cannot be empty' });
-      }
       updates.push('name = ?');
       params.push(name.trim());
     }
 
     if (type !== undefined) {
-      const validTypes: ProfileType[] = [
-        'personal',
-        'business',
-        'shared',
-        'savings',
-      ];
-      if (!validTypes.includes(type)) {
-        return res.status(400).json({
-          success: false,
-          error: `Invalid type. Must be one of: ${validTypes.join(', ')}`,
-        });
-      }
       updates.push('type = ?');
       params.push(type);
     }

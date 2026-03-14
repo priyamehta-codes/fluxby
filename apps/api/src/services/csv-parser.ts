@@ -164,7 +164,10 @@ export async function convertGenericToTransactions(
   rows: Record<string, string>[],
   mapping: ColumnMapping,
   accountId: number
-): Promise<{ transactions: TransactionCreate[]; errors: ParsedGenericTransaction[] }> {
+): Promise<{
+  transactions: TransactionCreate[];
+  errors: ParsedGenericTransaction[];
+}> {
   const transactions: TransactionCreate[] = [];
   const errors: ParsedGenericTransaction[] = [];
 

@@ -39,8 +39,9 @@ export function validate<T extends ZodSchema>(
   return (req: Request, res: Response, next: NextFunction): void => {
     const data = req[target];
 
-    // If stripUnknown is true and schema is an object schema, use strip
-    const parseSchema = stripUnknown ? schema : schema;
+    // If stripUnknown is true and schema is an object schema, use strip()
+    // strip() removes unrecognized keys from the output
+    const parseSchema = stripUnknown ? schema.strip() : schema;
 
     const result = parseSchema.safeParse(data);
 

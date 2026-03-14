@@ -126,26 +126,28 @@ export const bulkCategorizeSchema = z.object({
 /**
  * Categorize by counterparty request body
  * POST /api/transactions/categorize-by-counterparty
+ * Takes a transactionId and uses its opposing account to find related transactions
  */
 export const categorizeByCounterpartySchema = z.object({
-  counterpartyIban: z.string().trim().min(1, 'Counterparty IBAN is required'),
-  categoryId: z.coerce.number().int().positive(),
+  transactionId: z.coerce.number().int().positive('Transaction ID is required'),
+  categoryId: z.coerce.number().int().positive('Category ID is required'),
 });
 
 /**
  * Rename by counterparty request body
  * POST /api/transactions/rename-by-counterparty
+ * Takes a transactionId and applies the merchantName to related transactions
  */
 export const renameByCounterpartySchema = z.object({
-  counterpartyIban: z.string().trim().min(1, 'Counterparty IBAN is required'),
-  newMerchantName: z
+  transactionId: z.coerce.number().int().positive('Transaction ID is required'),
+  merchantName: z
     .string()
     .trim()
-    .min(1, 'New merchant name is required')
     .max(
       MAX_NAME_LENGTH,
       `Merchant name cannot exceed ${MAX_NAME_LENGTH} characters`
-    ),
+    )
+    .nullable(),
 });
 
 // Type exports

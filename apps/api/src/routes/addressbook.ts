@@ -9,6 +9,9 @@ import {
   mergeContactsSchema,
   splitContactSchema,
   addIbanToContactSchema,
+  createPaymentProviderSchema,
+  createPaymentProviderRuleSchema,
+  updatePaymentProviderRuleSchema,
 } from '../middleware/validation.js';
 
 const router = Router();
@@ -567,16 +570,10 @@ router.get('/cleanup-rules', (req, res) => {
  *       409:
  *         description: Regel bestaat al
  */
-router.post('/cleanup-rules', (req, res) => {
+router.post('/cleanup-rules', validate(createCleanupRuleSchema), (req, res) => {
   try {
     const { pattern } = req.body;
     const profileId = getEffectiveProfileId(req);
-
-    if (!pattern || pattern.trim() === '') {
-      return res
-        .status(400)
-        .json({ success: false, error: 'Pattern is required' });
-    }
 
     const trimmedPattern = pattern.trim();
 
@@ -1623,36 +1620,35 @@ router.get('/payment-providers', (_req, res) => {
  *       201:
  *         description: Payment processor toegevoegd
  */
-router.post('/payment-providers', (req, res) => {
-  try {
-    const { iban, name } = req.body;
-    if (!iban || !name) {
-      return res
-        .status(400)
-        .json({ success: false, error: 'IBAN and name are required' });
+router.post(
+  '/payment-providers',
+  validate(createPaymentProviderSchema),
+  (req, res) => {
+    try {
+      const { iban, name } = req.body;
+
+      const normalizedIban = iban.toUpperCase().trim();
+      const result = run(
+        'INSERT INTO payment_providers (iban, name) VALUES (?, ?)',
+        [normalizedIban, name.trim()]
+      );
+
+      res.status(201).json({
+        success: true,
+        data: {
+          id: result.lastInsertRowid,
+          iban: normalizedIban,
+          name: name.trim(),
+        },
+      });
+    } catch (error) {
+      console.error('Error adding payment processor:', error);
+      res
+        .status(500)
+        .json({ success: false, error: 'Failed to add payment processor' });
     }
-
-    const normalizedIban = iban.toUpperCase().trim();
-    const result = run(
-      'INSERT INTO payment_providers (iban, name) VALUES (?, ?)',
-      [normalizedIban, name.trim()]
-    );
-
-    res.status(201).json({
-      success: true,
-      data: {
-        id: result.lastInsertRowid,
-        iban: normalizedIban,
-        name: name.trim(),
-      },
-    });
-  } catch (error) {
-    console.error('Error adding payment processor:', error);
-    res
-      .status(500)
-      .json({ success: false, error: 'Failed to add payment processor' });
   }
-});
+);
 
 /**
  * @swagger
@@ -1758,35 +1754,35 @@ router.get('/payment-provider-rules', (_req, res) => {
  *       201:
  *         description: Payment processor regel toegevoegd
  */
-router.post('/payment-provider-rules', (req, res) => {
-  try {
-    const { name, patterns } = req.body;
-    if (!name || !patterns) {
-      return res
-        .status(400)
-        .json({ success: false, error: 'Name and patterns are required' });
+router.post(
+  '/payment-provider-rules',
+  validate(createPaymentProviderRuleSchema),
+  (req, res) => {
+    try {
+      const { name, patterns } = req.body;
+
+      const result = run(
+        'INSERT INTO payment_provider_rules (name, patterns) VALUES (?, ?)',
+        [name.trim(), patterns.trim()]
+      );
+
+      res.status(201).json({
+        success: true,
+        data: {
+          id: result.lastInsertRowid,
+          name: name.trim(),
+          patterns: patterns.trim(),
+        },
+      });
+    } catch (error) {
+      console.error('Error adding payment processor rule:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to add payment processor rule',
+      });
     }
-
-    const result = run(
-      'INSERT INTO payment_provider_rules (name, patterns) VALUES (?, ?)',
-      [name.trim(), patterns.trim()]
-    );
-
-    res.status(201).json({
-      success: true,
-      data: {
-        id: result.lastInsertRowid,
-        name: name.trim(),
-        patterns: patterns.trim(),
-      },
-    });
-  } catch (error) {
-    console.error('Error adding payment processor rule:', error);
-    res
-      .status(500)
-      .json({ success: false, error: 'Failed to add payment processor rule' });
   }
-});
+);
 
 /**
  * @swagger
@@ -1815,44 +1811,42 @@ router.post('/payment-provider-rules', (req, res) => {
  *       200:
  *         description: Payment processor regel bijgewerkt
  */
-router.patch('/payment-provider-rules/:id', (req, res) => {
-  try {
-    const id = parseInt(req.params.id);
-    const { name, patterns } = req.body;
+router.patch(
+  '/payment-provider-rules/:id',
+  validate(updatePaymentProviderRuleSchema),
+  (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { name, patterns } = req.body;
 
-    if (!name && !patterns) {
-      return res
-        .status(400)
-        .json({ success: false, error: 'Name or patterns required' });
+      const updates: string[] = [];
+      const values: (string | number)[] = [];
+
+      if (name) {
+        updates.push('name = ?');
+        values.push(name.trim());
+      }
+      if (patterns) {
+        updates.push('patterns = ?');
+        values.push(patterns.trim());
+      }
+
+      values.push(id);
+      run(
+        `UPDATE payment_provider_rules SET ${updates.join(', ')} WHERE id = ?`,
+        values
+      );
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Error updating payment processor rule:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to update payment processor rule',
+      });
     }
-
-    const updates: string[] = [];
-    const values: (string | number)[] = [];
-
-    if (name) {
-      updates.push('name = ?');
-      values.push(name.trim());
-    }
-    if (patterns) {
-      updates.push('patterns = ?');
-      values.push(patterns.trim());
-    }
-
-    values.push(id);
-    run(
-      `UPDATE payment_provider_rules SET ${updates.join(', ')} WHERE id = ?`,
-      values
-    );
-
-    res.json({ success: true });
-  } catch (error) {
-    console.error('Error updating payment processor rule:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to update payment processor rule',
-    });
   }
-});
+);
 
 /**
  * @swagger
@@ -2400,7 +2394,7 @@ router.post('/', validate(createAddressBookEntrySchema), (req, res) => {
  *       404:
  *         description: Entry niet gevonden
  */
-router.patch('/:id', (req, res) => {
+router.patch('/:id', validate(updateAddressBookEntrySchema), (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const { name, description, notes } = req.body;
@@ -2881,7 +2875,7 @@ router.get('/:id/ibans', (req, res) => {
  *       201:
  *         description: IBAN toegevoegd aan contact
  */
-router.post('/:id/ibans', (req, res) => {
+router.post('/:id/ibans', validate(addIbanToContactSchema), (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const { iban } = req.body;
@@ -2893,12 +2887,6 @@ router.post('/:id/ibans', (req, res) => {
         error:
           'Shared merchants cannot be modified. Use the resolve functionality to merge them into regular contacts.',
       });
-    }
-
-    if (!iban) {
-      return res
-        .status(400)
-        .json({ success: false, error: 'IBAN is required' });
     }
 
     const normalizedIban = iban.toUpperCase().trim();
@@ -3152,20 +3140,13 @@ router.post('/merge-duplicates', (req, res) => {
  *       200:
  *         description: Contacten samengevoegd
  */
-router.post('/merge', (req, res) => {
+router.post('/merge', validate(mergeContactsSchema), (req, res) => {
   try {
     const { contactIds, name } = req.body as {
       contactIds: number[];
       name?: string;
     };
     const profileId = getEffectiveProfileId(req);
-
-    if (!contactIds || contactIds.length < 2) {
-      return res.status(400).json({
-        success: false,
-        error: 'At least 2 contact IDs are required',
-      });
-    }
 
     // Convert negative IDs (shared IBAN merchants) to real address_book entries
     const convertedIds: number[] = [];
@@ -3424,7 +3405,7 @@ router.post('/merge', (req, res) => {
  *       200:
  *         description: Split uitgevoerd met details
  */
-router.post('/split', (req, res) => {
+router.post('/split', validate(splitContactSchema), (req, res) => {
   try {
     const { contactId, mappings } = req.body as {
       contactId: number;

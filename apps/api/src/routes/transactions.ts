@@ -10,6 +10,9 @@ import {
   validate,
   createTransactionSchema,
   updateTransactionSchema,
+  bulkCategorizeSchema,
+  categorizeByCounterpartySchema,
+  renameByCounterpartySchema,
 } from '../middleware/validation.js';
 
 const router = Router();
@@ -943,66 +946,70 @@ router.delete('/bulk', (req, res) => {
  *       500:
  *         description: Server error
  */
-router.post('/categorize-by-counterparty', (req, res) => {
-  try {
-    const { transactionId, categoryId } = req.body;
+router.post(
+  '/categorize-by-counterparty',
+  validate(categorizeByCounterpartySchema),
+  (req, res) => {
+    try {
+      const { transactionId, categoryId } = req.body;
 
-    // Get the transaction to find the opposing account name and current category
-    const tx = queryOne<{
-      opposing_account_name: string | null;
-      category_id: number | null;
-    }>(
-      'SELECT opposing_account_name, category_id FROM transactions WHERE id = ?',
-      [transactionId]
-    );
-
-    if (!tx) {
-      return res
-        .status(404)
-        .json({ success: false, error: 'Transaction not found' });
-    }
-
-    // If assigning to Overboekingen category (id=10), also set type to transfer
-    const extraUpdate = categoryId === 10 ? ', type = ?' : '';
-    const extraParams = categoryId === 10 ? ['transfer'] : [];
-
-    // If transaction already has a category, only update this specific transaction
-    // (don't apply to related transactions - user is explicitly changing just this one)
-    if (tx.category_id !== null) {
-      run(
-        `UPDATE transactions SET category_id = ?${extraUpdate} WHERE id = ?`,
-        [categoryId, ...extraParams, transactionId]
+      // Get the transaction to find the opposing account name and current category
+      const tx = queryOne<{
+        opposing_account_name: string | null;
+        category_id: number | null;
+      }>(
+        'SELECT opposing_account_name, category_id FROM transactions WHERE id = ?',
+        [transactionId]
       );
-      return res.json({ success: true, updated: 1, counterparty: null });
-    }
 
-    if (!tx.opposing_account_name) {
-      // No counterparty, just update the single transaction
-      run(
-        `UPDATE transactions SET category_id = ?${extraUpdate} WHERE id = ?`,
-        [categoryId, ...extraParams, transactionId]
+      if (!tx) {
+        return res
+          .status(404)
+          .json({ success: false, error: 'Transaction not found' });
+      }
+
+      // If assigning to Overboekingen category (id=10), also set type to transfer
+      const extraUpdate = categoryId === 10 ? ', type = ?' : '';
+      const extraParams = categoryId === 10 ? ['transfer'] : [];
+
+      // If transaction already has a category, only update this specific transaction
+      // (don't apply to related transactions - user is explicitly changing just this one)
+      if (tx.category_id !== null) {
+        run(
+          `UPDATE transactions SET category_id = ?${extraUpdate} WHERE id = ?`,
+          [categoryId, ...extraParams, transactionId]
+        );
+        return res.json({ success: true, updated: 1, counterparty: null });
+      }
+
+      if (!tx.opposing_account_name) {
+        // No counterparty, just update the single transaction
+        run(
+          `UPDATE transactions SET category_id = ?${extraUpdate} WHERE id = ?`,
+          [categoryId, ...extraParams, transactionId]
+        );
+        return res.json({ success: true, updated: 1, counterparty: null });
+      }
+
+      // Update all UNCATEGORIZED transactions with the same opposing account name
+      const result = run(
+        `UPDATE transactions SET category_id = ?${extraUpdate} WHERE opposing_account_name = ? AND category_id IS NULL`,
+        [categoryId, ...extraParams, tx.opposing_account_name]
       );
-      return res.json({ success: true, updated: 1, counterparty: null });
+
+      res.json({
+        success: true,
+        updated: result.changes,
+        counterparty: tx.opposing_account_name,
+      });
+    } catch (error) {
+      console.error('Error categorizing by counterparty:', error);
+      res
+        .status(500)
+        .json({ success: false, error: 'Failed to categorize transactions' });
     }
-
-    // Update all UNCATEGORIZED transactions with the same opposing account name
-    const result = run(
-      `UPDATE transactions SET category_id = ?${extraUpdate} WHERE opposing_account_name = ? AND category_id IS NULL`,
-      [categoryId, ...extraParams, tx.opposing_account_name]
-    );
-
-    res.json({
-      success: true,
-      updated: result.changes,
-      counterparty: tx.opposing_account_name,
-    });
-  } catch (error) {
-    console.error('Error categorizing by counterparty:', error);
-    res
-      .status(500)
-      .json({ success: false, error: 'Failed to categorize transactions' });
   }
-});
+);
 
 /**
  * @swagger
@@ -1043,129 +1050,124 @@ router.post('/categorize-by-counterparty', (req, res) => {
  *       500:
  *         description: Server error
  */
-router.post('/rename-by-counterparty', (req, res) => {
-  try {
-    const { transactionId, merchantName } = req.body;
+router.post(
+  '/rename-by-counterparty',
+  validate(renameByCounterpartySchema),
+  (req, res) => {
+    try {
+      const { transactionId, merchantName } = req.body;
 
-    if (
-      !transactionId ||
-      (merchantName !== null && typeof merchantName !== 'string')
-    ) {
-      return res
-        .status(400)
-        .json({ success: false, error: 'Invalid parameters' });
-    }
-
-    // Get more transaction details for strict matching
-    const tx = queryOne<{
-      id: number;
-      opposing_account_iban: string | null;
-      opposing_account_name: string | null;
-      merchant_name: string | null;
-      category_id: number | null;
-      description: string | null;
-    }>(
-      'SELECT id, opposing_account_iban, opposing_account_name, merchant_name, category_id, description FROM transactions WHERE id = ?',
-      [transactionId]
-    );
-
-    if (!tx) {
-      return res
-        .status(404)
-        .json({ success: false, error: 'Transaction not found' });
-    }
-
-    let result;
-
-    // STRICT MATCHING LOGIC:
-    // We only rename transactions that match on ALL of these criteria:
-    // 1. Same opposing_account_iban (if exists)
-    // 2. Same opposing_account_name (if exists)
-    // 3. Same category_id (important: only affect transactions in same category)
-    // 4. If there's an address book entry for this IBAN, use that as additional context
-
-    // Check if this IBAN has an address book entry
-    let addressBookId: number | null = null;
-    if (tx.opposing_account_iban) {
-      const addressBookEntry = queryOne<{ id: number }>(
-        `SELECT ab.id FROM address_book ab 
-         LEFT JOIN contact_ibans ci ON ci.contact_id = ab.id
-         WHERE ab.iban = ? OR ci.iban = ?`,
-        [tx.opposing_account_iban, tx.opposing_account_iban]
+      // Get more transaction details for strict matching
+      const tx = queryOne<{
+        id: number;
+        opposing_account_iban: string | null;
+        opposing_account_name: string | null;
+        merchant_name: string | null;
+        category_id: number | null;
+        description: string | null;
+      }>(
+        'SELECT id, opposing_account_iban, opposing_account_name, merchant_name, category_id, description FROM transactions WHERE id = ?',
+        [transactionId]
       );
-      addressBookId = addressBookEntry?.id || null;
-    }
 
-    if (tx.opposing_account_iban && tx.opposing_account_name) {
-      // Best case: match by IBAN + original opposing account name + category
-      const originalName = tx.opposing_account_name;
-
-      // Build WHERE clause with strict matching
-      const conditions: string[] = [
-        'opposing_account_iban = ?',
-        'opposing_account_name = ?',
-      ];
-      const params: (string | number | null)[] = [
-        merchantName,
-        tx.opposing_account_iban,
-        originalName,
-      ];
-
-      // Also match category if set (this is key to the stricter logic)
-      if (tx.category_id !== null) {
-        conditions.push('category_id = ?');
-        params.push(tx.category_id);
+      if (!tx) {
+        return res
+          .status(404)
+          .json({ success: false, error: 'Transaction not found' });
       }
 
-      result = run(
-        `UPDATE transactions SET merchant_name = ? 
+      let result;
+
+      // STRICT MATCHING LOGIC:
+      // We only rename transactions that match on ALL of these criteria:
+      // 1. Same opposing_account_iban (if exists)
+      // 2. Same opposing_account_name (if exists)
+      // 3. Same category_id (important: only affect transactions in same category)
+      // 4. If there's an address book entry for this IBAN, use that as additional context
+
+      // Check if this IBAN has an address book entry
+      let addressBookId: number | null = null;
+      if (tx.opposing_account_iban) {
+        const addressBookEntry = queryOne<{ id: number }>(
+          `SELECT ab.id FROM address_book ab 
+         LEFT JOIN contact_ibans ci ON ci.contact_id = ab.id
+         WHERE ab.iban = ? OR ci.iban = ?`,
+          [tx.opposing_account_iban, tx.opposing_account_iban]
+        );
+        addressBookId = addressBookEntry?.id || null;
+      }
+
+      if (tx.opposing_account_iban && tx.opposing_account_name) {
+        // Best case: match by IBAN + original opposing account name + category
+        const originalName = tx.opposing_account_name;
+
+        // Build WHERE clause with strict matching
+        const conditions: string[] = [
+          'opposing_account_iban = ?',
+          'opposing_account_name = ?',
+        ];
+        const params: (string | number | null)[] = [
+          merchantName,
+          tx.opposing_account_iban,
+          originalName,
+        ];
+
+        // Also match category if set (this is key to the stricter logic)
+        if (tx.category_id !== null) {
+          conditions.push('category_id = ?');
+          params.push(tx.category_id);
+        }
+
+        result = run(
+          `UPDATE transactions SET merchant_name = ? 
          WHERE ${conditions.join(' AND ')}`,
-        params
-      );
-    } else if (tx.opposing_account_iban) {
-      // Has IBAN but no opposing account name - only update this exact transaction
-      // This is safer than updating all transactions with this IBAN
-      result = run('UPDATE transactions SET merchant_name = ? WHERE id = ?', [
-        merchantName,
-        transactionId,
-      ]);
-    } else if (tx.opposing_account_name && tx.category_id !== null) {
-      // No IBAN but has opposing account name AND category - match on both
-      result = run(
-        `UPDATE transactions SET merchant_name = ? 
+          params
+        );
+      } else if (tx.opposing_account_iban) {
+        // Has IBAN but no opposing account name - only update this exact transaction
+        // This is safer than updating all transactions with this IBAN
+        result = run('UPDATE transactions SET merchant_name = ? WHERE id = ?', [
+          merchantName,
+          transactionId,
+        ]);
+      } else if (tx.opposing_account_name && tx.category_id !== null) {
+        // No IBAN but has opposing account name AND category - match on both
+        result = run(
+          `UPDATE transactions SET merchant_name = ? 
          WHERE opposing_account_name = ? AND category_id = ?`,
-        [merchantName, tx.opposing_account_name, tx.category_id]
-      );
-    } else if (tx.opposing_account_name) {
-      // Only opposing account name (no category) - just update this transaction
-      // Don't propagate to avoid accidental mass updates
-      result = run('UPDATE transactions SET merchant_name = ? WHERE id = ?', [
-        merchantName,
-        transactionId,
-      ]);
-    } else {
-      // Nothing to match on - just update this single transaction
-      result = run('UPDATE transactions SET merchant_name = ? WHERE id = ?', [
-        merchantName,
-        transactionId,
-      ]);
+          [merchantName, tx.opposing_account_name, tx.category_id]
+        );
+      } else if (tx.opposing_account_name) {
+        // Only opposing account name (no category) - just update this transaction
+        // Don't propagate to avoid accidental mass updates
+        result = run('UPDATE transactions SET merchant_name = ? WHERE id = ?', [
+          merchantName,
+          transactionId,
+        ]);
+      } else {
+        // Nothing to match on - just update this single transaction
+        result = run('UPDATE transactions SET merchant_name = ? WHERE id = ?', [
+          merchantName,
+          transactionId,
+        ]);
+      }
+
+      // NOTE: We no longer automatically update address book entries.
+      // The address book name should be managed separately through the AddressBook page.
+
+      res.json({
+        success: true,
+        updated: result.changes,
+        addressBookId, // Return this so frontend can offer to update address book separately if needed
+      });
+    } catch (error) {
+      console.error('Error renaming by counterparty:', error);
+      res
+        .status(500)
+        .json({ success: false, error: 'Failed to rename transactions' });
     }
-
-    // NOTE: We no longer automatically update address book entries.
-    // The address book name should be managed separately through the AddressBook page.
-
-    res.json({
-      success: true,
-      updated: result.changes,
-      addressBookId, // Return this so frontend can offer to update address book separately if needed
-    });
-  } catch (error) {
-    console.error('Error renaming by counterparty:', error);
-    res
-      .status(500)
-      .json({ success: false, error: 'Failed to rename transactions' });
   }
-});
+);
 
 // Bulk update category
 /**
@@ -1210,15 +1212,9 @@ router.post('/rename-by-counterparty', (req, res) => {
  *       500:
  *         description: Server error
  */
-router.post('/bulk-categorize', (req, res) => {
+router.post('/bulk-categorize', validate(bulkCategorizeSchema), (req, res) => {
   try {
     const { transactionIds, categoryId } = req.body;
-
-    if (!Array.isArray(transactionIds) || transactionIds.length === 0) {
-      return res
-        .status(400)
-        .json({ success: false, error: 'Invalid transaction IDs' });
-    }
 
     const placeholders = transactionIds.map(() => '?').join(',');
     run(

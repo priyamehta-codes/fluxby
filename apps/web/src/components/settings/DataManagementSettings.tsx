@@ -87,9 +87,7 @@ export function DataManagementSettings() {
       setLoadingAction('export');
 
       const data = await api.exportAll();
-      const dataWithChecksum = await addChecksumToBackup(
-        data as PlainBackup
-      );
+      const dataWithChecksum = await addChecksumToBackup(data as PlainBackup);
       const encrypted = await encryptBackup(dataWithChecksum, password);
 
       const blob = new Blob([JSON.stringify(encrypted, null, 2)], {

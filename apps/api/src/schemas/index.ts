@@ -10,3 +10,5 @@ export * from './categories.js';
 export * from './transactions.js';
 export * from './addressbook.js';
 export * from './import.js';
+export * from './profiles.js';
+export * from './user.js';

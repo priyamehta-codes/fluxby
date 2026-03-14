@@ -451,16 +451,15 @@ describe('AddressBook Schemas', () => {
   describe('mergeContactsSchema', () => {
     it('accepts valid input', () => {
       const result = mergeContactsSchema.safeParse({
-        sourceIds: [1, 2, 3],
-        targetId: 4,
+        contactIds: [1, 2, 3],
+        name: 'Merged Contact',
       });
       expect(result.success).toBe(true);
     });
 
-    it('rejects empty sourceIds', () => {
+    it('rejects single contactId', () => {
       const result = mergeContactsSchema.safeParse({
-        sourceIds: [],
-        targetId: 4,
+        contactIds: [1],
       });
       expect(result.success).toBe(false);
     });
@@ -470,18 +469,18 @@ describe('AddressBook Schemas', () => {
     it('accepts valid input', () => {
       const result = splitContactSchema.safeParse({
         contactId: 1,
-        splitIbans: ['NL91ABNA0417164300'],
+        mappings: [{ iban: 'NL91ABNA0417164300', name: 'New Contact' }],
       });
       expect(result.success).toBe(true);
     });
 
-    it('normalizes IBANs in array', () => {
+    it('normalizes IBANs in mappings', () => {
       const result = splitContactSchema.safeParse({
         contactId: 1,
-        splitIbans: ['nl91abna0417164300'],
+        mappings: [{ iban: 'nl91abna0417164300', name: 'New Contact' }],
       });
       expect(result.success).toBe(true);
-      expect(result.data?.splitIbans[0]).toBe('NL91ABNA0417164300');
+      expect(result.data?.mappings[0].iban).toBe('NL91ABNA0417164300');
     });
   });
 });

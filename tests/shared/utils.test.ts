@@ -182,7 +182,12 @@ describe('generateTransactionHash', () => {
   });
 
   it('returns a hex string of 16 characters', async () => {
-    const hash = await generateTransactionHash('2024-01-01', 100, 'Test', 'NL00TEST');
+    const hash = await generateTransactionHash(
+      '2024-01-01',
+      100,
+      'Test',
+      'NL00TEST'
+    );
     expect(hash).toMatch(/^[0-9a-f]{16}$/);
   });
 });
@@ -205,7 +210,12 @@ describe('generateTransactionHashLegacy', () => {
   });
 
   it('returns a hex string', () => {
-    const hash = generateTransactionHashLegacy('2024-01-01', 100, 'Test', 'NL00TEST');
+    const hash = generateTransactionHashLegacy(
+      '2024-01-01',
+      100,
+      'Test',
+      'NL00TEST'
+    );
     expect(hash).toMatch(/^[0-9a-f]+$/);
   });
 });

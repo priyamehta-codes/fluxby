@@ -3,7 +3,6 @@ import {
   ibanSchema,
   nameSchema,
   idParamSchema,
-  idArraySchema,
   MAX_NAME_LENGTH,
   MAX_DESCRIPTION_LENGTH,
   MAX_NOTES_LENGTH,
@@ -134,8 +133,14 @@ export const updateCleanupRuleSchema = z
  * POST /api/addressbook/merge
  */
 export const mergeContactsSchema = z.object({
-  sourceIds: idArraySchema,
-  targetId: z.coerce.number().int().positive(),
+  contactIds: z
+    .array(z.coerce.number().int())
+    .min(2, 'At least 2 contact IDs are required'),
+  name: z
+    .string()
+    .trim()
+    .max(MAX_NAME_LENGTH, `Name cannot exceed ${MAX_NAME_LENGTH} characters`)
+    .optional(),
 });
 
 /**
@@ -154,7 +159,14 @@ export const mergeDuplicatesSchema = z
  */
 export const splitContactSchema = z.object({
   contactId: z.coerce.number().int().positive(),
-  splitIbans: z.array(ibanSchema).min(1, 'At least one IBAN is required'),
+  mappings: z
+    .array(
+      z.object({
+        iban: ibanSchema,
+        name: nameSchema,
+      })
+    )
+    .min(1, 'At least one mapping is required'),
 });
 
 /**
@@ -180,19 +192,15 @@ export const createPaymentProviderSchema = z.object({
  * POST /api/addressbook/payment-provider-rules
  */
 export const createPaymentProviderRuleSchema = z.object({
-  pattern: z
+  name: nameSchema,
+  patterns: z
     .string()
     .trim()
-    .min(1, 'Pattern is required')
+    .min(1, 'Patterns are required')
     .max(
-      MAX_PATTERN_LENGTH,
-      `Pattern cannot exceed ${MAX_PATTERN_LENGTH} characters`
+      MAX_PATTERN_LENGTH * 5,
+      `Patterns cannot exceed ${MAX_PATTERN_LENGTH * 5} characters`
     ),
-  providerId: z.coerce.number().int().positive(),
-  fieldTarget: z
-    .enum(['description', 'merchant_name', 'all'])
-    .optional()
-    .default('all'),
 });
 
 /**
@@ -201,17 +209,19 @@ export const createPaymentProviderRuleSchema = z.object({
  */
 export const updatePaymentProviderRuleSchema = z
   .object({
-    pattern: z
+    name: z
+      .string()
+      .trim()
+      .max(MAX_NAME_LENGTH, `Name cannot exceed ${MAX_NAME_LENGTH} characters`)
+      .optional(),
+    patterns: z
       .string()
       .trim()
       .max(
-        MAX_PATTERN_LENGTH,
-        `Pattern cannot exceed ${MAX_PATTERN_LENGTH} characters`
+        MAX_PATTERN_LENGTH * 5,
+        `Patterns cannot exceed ${MAX_PATTERN_LENGTH * 5} characters`
       )
       .optional(),
-    providerId: z.coerce.number().int().positive().optional(),
-    fieldTarget: z.enum(['description', 'merchant_name', 'all']).optional(),
-    isActive: z.boolean().optional(),
   })
   .refine((data) => Object.keys(data).length > 0, {
     message: 'At least one field is required',
