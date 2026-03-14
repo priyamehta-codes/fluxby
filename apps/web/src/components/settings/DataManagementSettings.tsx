@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { RefreshCcw } from 'lucide-react';
+import { RefreshCcw, Lock, LockOpen, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -9,15 +9,38 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { api } from '@/lib/api';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useConfirm } from '@/contexts/ConfirmContext';
+import { useEncryption } from '@/contexts/EncryptionContext';
 import { resetAppAndRestartOnboarding } from '@/lib/database-reset';
+import {
+  encryptBackup,
+  decryptBackup,
+  isEncryptedBackup,
+  verifyBackupChecksum,
+  addChecksumToBackup,
+  getBackupFilename,
+  ENCRYPTED_EXTENSION,
+  type PlainBackup,
+} from '@/lib/backup-crypto';
 
 export function DataManagementSettings() {
   const { t } = useLanguage();
   const queryClient = useQueryClient();
   const confirm = useConfirm();
+  const { isEncryptionEnabled, verifyPassword } = useEncryption();
   const [dataNotice, setDataNotice] = useState<{
     type: 'success' | 'error' | 'warning';
     text: string;
@@ -25,14 +48,226 @@ export function DataManagementSettings() {
   const [loadingAction, setLoadingAction] = useState<
     'export' | 'import' | 'delete' | null
   >(null);
+  const [encryptExport, setEncryptExport] = useState(false);
+
+  // Password dialog state for encrypted exports/imports
+  const [passwordDialog, setPasswordDialog] = useState<{
+    open: boolean;
+    mode: 'export' | 'import';
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    pendingData?: any;
+    pendingFile?: File;
+  }>({ open: false, mode: 'export' });
+  const [passwordInput, setPasswordInput] = useState('');
+  const [passwordError, setPasswordError] = useState('');
 
   // Auto-hide notice (keep warnings visible longer)
   React.useEffect(() => {
     if (!dataNotice) return;
     const delay = dataNotice.type === 'warning' ? 10000 : 4000;
-    const t = setTimeout(() => setDataNotice(null), delay);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => setDataNotice(null), delay);
+    return () => clearTimeout(timer);
   }, [dataNotice]);
+
+  // Handle encrypted export
+  const handleEncryptedExport = async (password: string) => {
+    try {
+      // Verify password if encryption is enabled
+      if (isEncryptionEnabled) {
+        const isValid = await verifyPassword(password);
+        if (!isValid) {
+          setPasswordError(
+            t.settings.dataManagement?.wrongPassword || 'Incorrect password'
+          );
+          return;
+        }
+      }
+
+      setPasswordDialog({ open: false, mode: 'export' });
+      setPasswordInput('');
+      setPasswordError('');
+      setLoadingAction('export');
+
+      const data = await api.exportAll();
+      const dataWithChecksum = await addChecksumToBackup(
+        data as PlainBackup
+      );
+      const encrypted = await encryptBackup(dataWithChecksum, password);
+
+      const blob = new Blob([JSON.stringify(encrypted, null, 2)], {
+        type: 'application/json',
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = getBackupFilename(new Date(), true);
+      a.click();
+      URL.revokeObjectURL(url);
+
+      setDataNotice({
+        type: 'success',
+        text:
+          t.settings.dataManagement?.exportEncryptedSuccess ||
+          'Encrypted backup saved successfully.',
+      });
+    } catch {
+      setDataNotice({
+        type: 'error',
+        text: t.settings.dataManagement.exportError,
+      });
+    } finally {
+      setLoadingAction(null);
+    }
+  };
+
+  // Handle encrypted import
+  const handleEncryptedImport = async (password: string) => {
+    if (!passwordDialog.pendingFile) return;
+
+    try {
+      const text = await passwordDialog.pendingFile.text();
+      const parsed = JSON.parse(text);
+
+      const decrypted = await decryptBackup(parsed, password);
+
+      setPasswordDialog({ open: false, mode: 'import' });
+      setPasswordInput('');
+      setPasswordError('');
+      setLoadingAction('import');
+
+      const result = await api.importAll(decrypted);
+      queryClient.invalidateQueries();
+
+      // Check if any category rules were skipped
+      const skippedRules = (
+        result as {
+          categoryRulesSkipped?: Array<{
+            pattern: string;
+            reason: string;
+          }>;
+        }
+      )?.categoryRulesSkipped;
+
+      if (skippedRules && skippedRules.length > 0) {
+        const skippedList = skippedRules
+          .map((r) => `• "${r.pattern}": ${r.reason}`)
+          .join('\n');
+        setDataNotice({
+          type: 'warning',
+          text: `${t.settings.dataManagement.importSuccess}\n\n${t.settings.dataManagement.skippedRules || 'Skipped category rules'}:\n${skippedList}`,
+        });
+      } else {
+        setDataNotice({
+          type: 'success',
+          text: t.settings.dataManagement.importSuccess,
+        });
+      }
+    } catch (err) {
+      const errorMessage =
+        err instanceof Error ? err.message : 'Decryption failed';
+      if (errorMessage.includes('incorrect password')) {
+        setPasswordError(
+          t.settings.dataManagement?.wrongPassword || 'Incorrect password'
+        );
+      } else if (errorMessage.includes('Checksum mismatch')) {
+        setPasswordDialog({ open: false, mode: 'import' });
+        setPasswordInput('');
+        setPasswordError('');
+        setDataNotice({
+          type: 'error',
+          text:
+            t.settings.dataManagement?.checksumMismatch ||
+            'Backup file is corrupted (checksum mismatch)',
+        });
+      } else {
+        setPasswordError(errorMessage);
+      }
+    } finally {
+      setLoadingAction(null);
+    }
+  };
+
+  // Handle file import (detects encrypted vs plain)
+  const handleFileImport = async (file: File) => {
+    const isConfirmed = await confirm({
+      title: t.settings.dataManagement.importTitle,
+      message: t.settings.dataManagement.importConfirm,
+      variant: 'default',
+    });
+    if (!isConfirmed) return;
+
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+
+      // Check if encrypted
+      if (isEncryptedBackup(parsed)) {
+        setPasswordDialog({
+          open: true,
+          mode: 'import',
+          pendingFile: file,
+        });
+        return;
+      }
+
+      // Plain backup - verify checksum if present
+      setLoadingAction('import');
+      const { valid, hasChecksum } = await verifyBackupChecksum(
+        parsed as PlainBackup
+      );
+
+      if (hasChecksum && !valid) {
+        const proceed = await confirm({
+          title:
+            t.settings.dataManagement?.checksumWarningTitle ||
+            'Checksum warning',
+          message:
+            t.settings.dataManagement?.checksumWarningMessage ||
+            'The backup file checksum does not match. The file may have been modified. Continue anyway?',
+          variant: 'danger',
+        });
+        if (!proceed) {
+          setLoadingAction(null);
+          return;
+        }
+      }
+
+      const result = await api.importAll(parsed);
+      queryClient.invalidateQueries();
+
+      // Check if any category rules were skipped
+      const skippedRules = (
+        result as {
+          categoryRulesSkipped?: Array<{
+            pattern: string;
+            reason: string;
+          }>;
+        }
+      )?.categoryRulesSkipped;
+
+      if (skippedRules && skippedRules.length > 0) {
+        const skippedList = skippedRules
+          .map((r) => `• "${r.pattern}": ${r.reason}`)
+          .join('\n');
+        setDataNotice({
+          type: 'warning',
+          text: `${t.settings.dataManagement.importSuccess}\n\n${t.settings.dataManagement.skippedRules || 'Skipped category rules'}:\n${skippedList}`,
+        });
+      } else {
+        setDataNotice({
+          type: 'success',
+          text: t.settings.dataManagement.importSuccess,
+        });
+      }
+    } catch {
+      setDataNotice({
+        type: 'error',
+        text: t.settings.dataManagement.importError,
+      });
+    } finally {
+      setLoadingAction(null);
+    }
+  };
 
   return (
     <div className=''>
@@ -64,52 +299,81 @@ export function DataManagementSettings() {
               </div>
             )}
 
-            <div className='flex items-center justify-between rounded-lg border p-3'>
-              <div className='flex-1'>
-                <p className='text-sm font-medium'>
-                  {t.settings.dataManagement.exportTitle}
-                </p>
-                <p className='text-xs text-muted-foreground'>
-                  {t.settings.dataManagement.exportDescription}
-                </p>
+            <div className='rounded-lg border p-3'>
+              <div className='flex items-center justify-between'>
+                <div className='flex-1'>
+                  <p className='text-sm font-medium'>
+                    {t.settings.dataManagement.exportTitle}
+                  </p>
+                  <p className='text-xs text-muted-foreground'>
+                    {t.settings.dataManagement.exportDescription}
+                  </p>
+                </div>
+                <Button
+                  variant='outline'
+                  disabled={loadingAction !== null}
+                  onClick={async () => {
+                    if (encryptExport) {
+                      // Open password dialog for encrypted export
+                      setPasswordDialog({ open: true, mode: 'export' });
+                    } else {
+                      // Plain export with checksum
+                      setLoadingAction('export');
+                      try {
+                        const data = await api.exportAll();
+                        const dataWithChecksum = await addChecksumToBackup(
+                          data as PlainBackup
+                        );
+                        const blob = new Blob(
+                          [JSON.stringify(dataWithChecksum, null, 2)],
+                          { type: 'application/json' }
+                        );
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = getBackupFilename(new Date(), false);
+                        a.click();
+                        URL.revokeObjectURL(url);
+                        setDataNotice({
+                          type: 'success',
+                          text: t.settings.dataManagement.exportSuccess,
+                        });
+                      } catch {
+                        setDataNotice({
+                          type: 'error',
+                          text: t.settings.dataManagement.exportError,
+                        });
+                      } finally {
+                        setLoadingAction(null);
+                      }
+                    }
+                  }}
+                >
+                  {loadingAction === 'export' ? (
+                    <RefreshCcw className='mr-2 h-4 w-4 animate-spin' />
+                  ) : encryptExport ? (
+                    <Lock className='mr-2 h-4 w-4' />
+                  ) : (
+                    <LockOpen className='mr-2 h-4 w-4' />
+                  )}
+                  {t.settings.dataManagement.exportButton}
+                </Button>
               </div>
-              <Button
-                variant='outline'
-                disabled={loadingAction !== null}
-                onClick={async () => {
-                  setLoadingAction('export');
-                  try {
-                    const data = await api.exportAll();
-                    const blob = new Blob([JSON.stringify(data, null, 2)], {
-                      type: 'application/json',
-                    });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = `fluxby-export-${
-                      new Date().toISOString().split('T')[0]
-                    }.json`;
-                    a.click();
-                    URL.revokeObjectURL(url);
-                    setDataNotice({
-                      type: 'success',
-                      text: t.settings.dataManagement.exportSuccess,
-                    });
-                  } catch {
-                    setDataNotice({
-                      type: 'error',
-                      text: t.settings.dataManagement.exportError,
-                    });
-                  } finally {
-                    setLoadingAction(null);
-                  }
-                }}
-              >
-                {loadingAction === 'export' ? (
-                  <RefreshCcw className='mr-2 h-4 w-4 animate-spin' />
-                ) : null}
-                {t.settings.dataManagement.exportButton}
-              </Button>
+              <div className='mt-3 flex items-center gap-2 border-t pt-3'>
+                <Switch
+                  id='encrypt-export'
+                  checked={encryptExport}
+                  onCheckedChange={setEncryptExport}
+                />
+                <Label
+                  htmlFor='encrypt-export'
+                  className='flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground'
+                >
+                  <ShieldCheck className='h-3.5 w-3.5' />
+                  {t.settings.dataManagement?.encryptBackup ||
+                    'Encrypt backup with password'}
+                </Label>
+              </div>
             </div>
 
             <div className='flex items-center justify-between rounded-lg border p-3'>
@@ -118,66 +382,23 @@ export function DataManagementSettings() {
                   {t.settings.dataManagement.importTitle}
                 </p>
                 <p className='text-xs text-muted-foreground'>
-                  {t.settings.dataManagement.importDescription}
+                  {t.settings.dataManagement?.importDescriptionEncrypted ||
+                    'Import a previous export file (supports encrypted and plain backups)'}
                 </p>
               </div>
               <input
                 type='file'
-                accept='application/json'
+                accept='application/json,.fluxby-encrypted'
                 className='hidden'
                 id='import-json-input'
                 onChange={async (e) => {
                   const file = e.target.files?.[0];
-                  if (!file) return;
-                  const isConfirmed = await confirm({
-                    title: t.settings.dataManagement.importTitle,
-                    message: t.settings.dataManagement.importConfirm,
-                    variant: 'default',
-                  });
-                  if (!isConfirmed) {
+                  if (!file) {
                     e.target.value = '';
                     return;
                   }
-                  setLoadingAction('import');
-                  try {
-                    const text = await file.text();
-                    const payload = JSON.parse(text);
-                    const result = await api.importAll(payload);
-                    queryClient.invalidateQueries();
-
-                    // Check if any category rules were skipped
-                    const skippedRules = (
-                      result as {
-                        categoryRulesSkipped?: Array<{
-                          pattern: string;
-                          reason: string;
-                        }>;
-                      }
-                    )?.categoryRulesSkipped;
-
-                    if (skippedRules && skippedRules.length > 0) {
-                      const skippedList = skippedRules
-                        .map((r) => `• "${r.pattern}": ${r.reason}`)
-                        .join('\n');
-                      setDataNotice({
-                        type: 'warning',
-                        text: `${t.settings.dataManagement.importSuccess}\n\n${t.settings.dataManagement.skippedRules || 'Overgeslagen categorieregels'}:\n${skippedList}`,
-                      });
-                    } else {
-                      setDataNotice({
-                        type: 'success',
-                        text: t.settings.dataManagement.importSuccess,
-                      });
-                    }
-                  } catch {
-                    setDataNotice({
-                      type: 'error',
-                      text: t.settings.dataManagement.importError,
-                    });
-                  } finally {
-                    setLoadingAction(null);
-                    e.target.value = '';
-                  }
+                  await handleFileImport(file);
+                  e.target.value = '';
                 }}
               />
               <Button
@@ -239,6 +460,95 @@ export function DataManagementSettings() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Password dialog for encrypted backup/import */}
+      <Dialog
+        open={passwordDialog.open}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPasswordDialog({ open: false, mode: 'export' });
+            setPasswordInput('');
+            setPasswordError('');
+          }
+        }}
+      >
+        <DialogContent className='sm:max-w-md'>
+          <DialogHeader>
+            <DialogTitle>
+              {passwordDialog.mode === 'export'
+                ? t.settings.dataManagement?.encryptExportTitle ||
+                  'Encrypt backup'
+                : t.settings.dataManagement?.decryptImportTitle ||
+                  'Decrypt backup'}
+            </DialogTitle>
+            <DialogDescription>
+              {passwordDialog.mode === 'export'
+                ? t.settings.dataManagement?.encryptExportDescription ||
+                  'Enter a password to encrypt your backup. You will need this password to restore the backup later.'
+                : t.settings.dataManagement?.decryptImportDescription ||
+                  'Enter the password used to encrypt this backup.'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className='space-y-4 py-4'>
+            <div className='space-y-2'>
+              <Label htmlFor='backup-password'>
+                {t.security?.enterPassword || 'Password'}
+              </Label>
+              <Input
+                id='backup-password'
+                type='password'
+                value={passwordInput}
+                onChange={(e) => {
+                  setPasswordInput(e.target.value);
+                  setPasswordError('');
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && passwordInput.length >= 4) {
+                    if (passwordDialog.mode === 'export') {
+                      handleEncryptedExport(passwordInput);
+                    } else {
+                      handleEncryptedImport(passwordInput);
+                    }
+                  }
+                }}
+                placeholder={
+                  t.settings.dataManagement?.passwordPlaceholder ||
+                  'Enter password (min 4 characters)'
+                }
+              />
+              {passwordError && (
+                <p className='text-sm text-destructive'>{passwordError}</p>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant='outline'
+              onClick={() => {
+                setPasswordDialog({ open: false, mode: 'export' });
+                setPasswordInput('');
+                setPasswordError('');
+              }}
+            >
+              {t.common.cancel}
+            </Button>
+            <Button
+              onClick={() => {
+                if (passwordDialog.mode === 'export') {
+                  handleEncryptedExport(passwordInput);
+                } else {
+                  handleEncryptedImport(passwordInput);
+                }
+              }}
+              disabled={passwordInput.length < 4}
+            >
+              {passwordDialog.mode === 'export'
+                ? t.settings.dataManagement.exportButton
+                : t.settings.dataManagement.importButton}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

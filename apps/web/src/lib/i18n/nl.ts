@@ -834,8 +834,20 @@ export interface TranslationKeys {
       exportButton: string;
       exportSuccess: string;
       exportError: string;
+      encryptBackup: string;
+      exportEncryptedSuccess: string;
+      encryptExportTitle: string;
+      encryptExportDescription: string;
+      decryptImportTitle: string;
+      decryptImportDescription: string;
+      passwordPlaceholder: string;
+      wrongPassword: string;
+      checksumMismatch: string;
+      checksumWarningTitle: string;
+      checksumWarningMessage: string;
       importTitle: string;
       importDescription: string;
+      importDescriptionEncrypted: string;
       importButton: string;
       importConfirm: string;
       importSuccess: string;
@@ -2289,9 +2301,26 @@ export const nl: TranslationKeys = {
       exportButton: 'Exporteren',
       exportSuccess: 'Export voltooid. JSON opgeslagen.',
       exportError: 'Export mislukt. Probeer opnieuw.',
+      encryptBackup: 'Backup versleutelen met wachtwoord',
+      exportEncryptedSuccess: 'Versleutelde backup opgeslagen.',
+      encryptExportTitle: 'Backup versleutelen',
+      encryptExportDescription:
+        'Voer een wachtwoord in om je backup te versleutelen. Je hebt dit wachtwoord nodig om de backup later te herstellen.',
+      decryptImportTitle: 'Backup ontsleutelen',
+      decryptImportDescription:
+        'Voer het wachtwoord in waarmee deze backup is versleuteld.',
+      passwordPlaceholder: 'Wachtwoord (minimaal 4 tekens)',
+      wrongPassword: 'Onjuist wachtwoord',
+      checksumMismatch:
+        'Backup bestand is beschadigd (checksum komt niet overeen)',
+      checksumWarningTitle: 'Checksum waarschuwing',
+      checksumWarningMessage:
+        'De checksum van het backup bestand komt niet overeen. Het bestand is mogelijk gewijzigd. Toch doorgaan?',
       importTitle: 'Importeer Gegevens',
       importDescription:
         'Importeer een eerder exportbestand (overschrijft huidige data)',
+      importDescriptionEncrypted:
+        'Importeer een backup (ondersteunt versleutelde en onversleutelde bestanden)',
       importButton: 'Importeren',
       importConfirm:
         'Dit overschrijft alle huidige data met het geselecteerde exportbestand. Doorgaan?',

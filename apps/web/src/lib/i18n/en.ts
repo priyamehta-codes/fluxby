@@ -938,9 +938,25 @@ export const en: TranslationKeys = {
       exportButton: 'Export',
       exportSuccess: 'Export completed. JSON saved.',
       exportError: 'Export failed. Try again.',
+      encryptBackup: 'Encrypt backup with password',
+      exportEncryptedSuccess: 'Encrypted backup saved successfully.',
+      encryptExportTitle: 'Encrypt backup',
+      encryptExportDescription:
+        'Enter a password to encrypt your backup. You will need this password to restore the backup later.',
+      decryptImportTitle: 'Decrypt backup',
+      decryptImportDescription:
+        'Enter the password used to encrypt this backup.',
+      passwordPlaceholder: 'Enter password (min 4 characters)',
+      wrongPassword: 'Incorrect password',
+      checksumMismatch: 'Backup file is corrupted (checksum mismatch)',
+      checksumWarningTitle: 'Checksum warning',
+      checksumWarningMessage:
+        'The backup file checksum does not match. The file may have been modified. Continue anyway?',
       importTitle: 'Import Data',
       importDescription:
         'Import a previous export file (overwrites current data)',
+      importDescriptionEncrypted:
+        'Import a backup file (supports encrypted and plain backups)',
       importButton: 'Import',
       importConfirm:
         'This will overwrite all current data with the selected export file. Continue?',
