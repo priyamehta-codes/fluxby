@@ -1,10 +1,15 @@
 import { Router } from 'express';
 import { query, run } from '../db/index.js';
-import type { Budget, BudgetCreate } from '@fluxby/shared';
+import type { Budget } from '@fluxby/shared';
 import {
   getEffectiveProfileId,
   // verifyBudgetProfile is available for future use
 } from '../middleware/profileAuth.js';
+import {
+  validate,
+  createBudgetSchema,
+  updateBudgetSchema,
+} from '../middleware/validation.js';
 
 const router = Router();
 
@@ -196,17 +201,10 @@ router.get('/', (req, res) => {
  *       400:
  *         description: Geldig bedrag is verplicht
  */
-router.post('/', (req, res) => {
+router.post('/', validate(createBudgetSchema), (req, res) => {
   try {
     const profileId = getEffectiveProfileId(req);
-    const { categoryId, amount, period, startDate, endDate }: BudgetCreate =
-      req.body;
-
-    if (amount === undefined || amount <= 0) {
-      return res
-        .status(400)
-        .json({ success: false, error: 'Valid amount is required' });
-    }
+    const { categoryId, amount, period, startDate, endDate } = req.body;
 
     const result = run(
       'INSERT INTO budgets (category_id, amount, period, start_date, end_date, profile_id) VALUES (?, ?, ?, ?, ?, ?)',
@@ -231,7 +229,7 @@ router.post('/', (req, res) => {
 });
 
 // PATCH update budget
-router.patch('/:id', (req, res) => {
+router.patch('/:id', validate(updateBudgetSchema), (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const { categoryId, amount, period, startDate, endDate } = req.body;
@@ -264,12 +262,7 @@ router.patch('/:id', (req, res) => {
       params.push(endDate);
     }
 
-    if (updates.length === 0) {
-      return res
-        .status(400)
-        .json({ success: false, error: 'No fields to update' });
-    }
-
+    // Schema ensures at least one field is present
     params.push(id);
     run(`UPDATE budgets SET ${updates.join(', ')} WHERE id = ?`, params);
 

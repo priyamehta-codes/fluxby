@@ -1,6 +1,12 @@
 import { Router } from 'express';
 import { query, queryOne, run } from '../db/index.js';
-import type { Account, AccountCreate } from '@fluxby/shared';
+import type { Account } from '@fluxby/shared';
+import {
+  validate,
+  createAccountSchema,
+  updateAccountSchema,
+  updateAccountOrderSchema,
+} from '../middleware/validation.js';
 
 const router = Router();
 
@@ -229,22 +235,15 @@ router.get('/:id', (req, res) => {
  *       400:
  *         description: IBAN en naam zijn verplicht
  */
-router.post('/', (req, res) => {
+router.post('/', validate(createAccountSchema), (req, res) => {
   try {
-    const { iban, name, type }: AccountCreate = req.body;
+    const { iban, name, type } = req.body;
     const profileId = getEffectiveProfileId(req);
 
-    if (!iban || !name) {
-      return res
-        .status(400)
-        .json({ success: false, error: 'IBAN and name are required' });
-    }
-
-    // Normalize IBAN to uppercase for consistent matching
-    const normalizedIban = iban.toUpperCase().trim();
+    // IBAN is already normalized/trimmed by schema
 
     // Prevent creating accounts for shared IBANs (payment processors)
-    if (isSharedIban(normalizedIban)) {
+    if (isSharedIban(iban)) {
       return res.status(400).json({
         success: false,
         error: 'Cannot create account for shared IBAN (payment processor)',
@@ -254,14 +253,14 @@ router.post('/', (req, res) => {
     // Check if account already exists IN THIS PROFILE
     const existing = queryOne<{ id: number }>(
       'SELECT id FROM accounts WHERE iban = ? AND profile_id = ?',
-      [normalizedIban, profileId]
+      [iban, profileId]
     );
 
     if (existing) {
       // Update existing account
       run(
         'UPDATE accounts SET name = ?, type = ? WHERE iban = ? AND profile_id = ?',
-        [name, type || 'checking', normalizedIban, profileId]
+        [name, type || 'checking', iban, profileId]
       );
       return res.status(200).json({
         success: true,
@@ -271,7 +270,7 @@ router.post('/', (req, res) => {
 
     const result = run(
       'INSERT INTO accounts (iban, name, type, profile_id, order_index) VALUES (?, ?, ?, ?, (SELECT COALESCE(MAX(order_index), 0) + 1 FROM accounts WHERE profile_id = ?))',
-      [normalizedIban, name, type || 'checking', profileId, profileId]
+      [iban, name, type || 'checking', profileId, profileId]
     );
 
     res.status(201).json({
@@ -316,16 +315,10 @@ router.post('/', (req, res) => {
  *       400:
  *         description: Invalid request data
  */
-router.patch('/order', (req, res) => {
+router.patch('/order', validate(updateAccountOrderSchema), (req, res) => {
   try {
-    const { accountIds }: { accountIds: number[] } = req.body;
+    const { accountIds } = req.body;
     const profileId = getEffectiveProfileId(req);
-
-    if (!Array.isArray(accountIds)) {
-      return res
-        .status(400)
-        .json({ success: false, error: 'accountIds must be an array' });
-    }
 
     // Verify all accounts belong to this profile before updating
     for (const accountId of accountIds) {
@@ -338,7 +331,7 @@ router.patch('/order', (req, res) => {
     }
 
     // Update order_index for each account
-    accountIds.forEach((accountId, index) => {
+    accountIds.forEach((accountId: number, index: number) => {
       run(
         'UPDATE accounts SET order_index = ? WHERE id = ? AND profile_id = ?',
         [index, accountId, profileId]
@@ -389,7 +382,7 @@ router.patch('/order', (req, res) => {
  *       403:
  *         description: Access denied
  */
-router.patch('/:id', (req, res) => {
+router.patch('/:id', validate(updateAccountSchema), (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const profileId = getEffectiveProfileId(req);
@@ -421,12 +414,7 @@ router.patch('/:id', (req, res) => {
       params.push(currentBalance);
     }
 
-    if (updates.length === 0) {
-      return res
-        .status(400)
-        .json({ success: false, error: 'No fields to update' });
-    }
-
+    // Schema ensures at least one field is present
     params.push(id);
     params.push(profileId);
     run(

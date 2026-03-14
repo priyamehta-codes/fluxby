@@ -1,6 +1,15 @@
 import { Router } from 'express';
 import { query, queryOne, run, db } from '../db/index.js';
 import { getEffectiveProfileId } from '../middleware/profileAuth.js';
+import {
+  validate,
+  createAddressBookEntrySchema,
+  updateAddressBookEntrySchema,
+  createCleanupRuleSchema,
+  mergeContactsSchema,
+  splitContactSchema,
+  addIbanToContactSchema,
+} from '../middleware/validation.js';
 
 const router = Router();
 
@@ -1394,7 +1403,7 @@ router.post('/resolve-shared', (req, res) => {
       `SELECT COUNT(DISTINCT COALESCE(NULLIF(opposing_account_name, ''), merchant_name)) as count
        FROM transactions
        WHERE opposing_account_iban = ? AND profile_id = ?`,
-      [normalizedIban, profileId]
+      [iban, profileId]
     );
 
     const totalMerchantCount = allMerchants?.count || 0;
@@ -1402,9 +1411,7 @@ router.post('/resolve-shared', (req, res) => {
 
     // If this is a payment provider, ensure it's marked as shared
     if (isPaymentProvider && !isSharedIban) {
-      run('INSERT OR IGNORE INTO shared_ibans (iban) VALUES (?)', [
-        normalizedIban,
-      ]);
+      run('INSERT OR IGNORE INTO shared_ibans (iban) VALUES (?)', [iban]);
     }
 
     let addressBookId: number | null = null;
@@ -1429,7 +1436,7 @@ router.post('/resolve-shared', (req, res) => {
         // Ensure IBAN is linked to this contact
         run(
           'INSERT OR IGNORE INTO contact_ibans (contact_id, iban, is_primary) VALUES (?, ?, 0)',
-          [addressBookId, normalizedIban]
+          [addressBookId, iban]
         );
         // Update name if requested (usually we keep existing name but user might have typed a new one)
         if (name && name !== contact.name) {
@@ -1450,7 +1457,7 @@ router.post('/resolve-shared', (req, res) => {
       }>(
         `SELECT id, name, original_name FROM address_book 
          WHERE profile_id = ? AND iban = ? AND (LOWER(name) = LOWER(?) OR LOWER(original_name) = LOWER(?))`,
-        [profileId, normalizedIban, name, primaryOriginalName || name]
+        [profileId, iban, name, primaryOriginalName || name]
       );
 
       if (existingEntry) {
@@ -1468,27 +1475,27 @@ router.post('/resolve-shared', (req, res) => {
           addressBookId = existingByName.id;
           run(
             'UPDATE address_book SET iban = ?, original_name = ? WHERE id = ? AND profile_id = ?',
-            [normalizedIban, primaryOriginalName, addressBookId, profileId]
+            [iban, primaryOriginalName, addressBookId, profileId]
           );
         } else if (existingByName) {
           // Name exists with different IBAN - add this IBAN to contact_ibans
           addressBookId = existingByName.id;
           run(
             'INSERT OR IGNORE INTO contact_ibans (contact_id, iban, is_primary) VALUES (?, ?, 0)',
-            [addressBookId, normalizedIban]
+            [addressBookId, iban]
           );
         } else {
           // Create new entry
           const result = run(
             'INSERT INTO address_book (iban, name, original_name, profile_id) VALUES (?, ?, ?, ?)',
-            [normalizedIban, name, primaryOriginalName, profileId]
+            [iban, name, primaryOriginalName, profileId]
           );
           addressBookId = Number(result.lastInsertRowid);
 
           // Also add to contact_ibans for proper lookup
           run(
             'INSERT OR IGNORE INTO contact_ibans (contact_id, iban, is_primary) VALUES (?, ?, 1)',
-            [addressBookId, normalizedIban]
+            [addressBookId, iban]
           );
         }
       }
@@ -1510,7 +1517,7 @@ router.post('/resolve-shared', (req, res) => {
           cleanedName,
           addressBookId,
           profileId,
-          normalizedIban,
+          iban,
           originalName,
           originalName,
         ]
@@ -1522,7 +1529,7 @@ router.post('/resolve-shared', (req, res) => {
     // Look for merchants not in address_book (with original_name) AND not matching originalNames
     const resolvedMerchants = query<{ original_name: string }>(
       'SELECT original_name FROM address_book WHERE profile_id = ? AND iban = ? AND original_name IS NOT NULL',
-      [profileId, normalizedIban]
+      [profileId, iban]
     );
     const resolvedNames = resolvedMerchants.map((m) => m.original_name);
     const allResolvedNames = [...new Set([...resolvedNames, ...originalNames])];
@@ -1534,14 +1541,14 @@ router.post('/resolve-shared', (req, res) => {
        AND COALESCE(NULLIF(opposing_account_name, ''), merchant_name) NOT IN (${
          allResolvedNames.map(() => '?').join(',') || "''"
        })`,
-      [profileId, normalizedIban, ...allResolvedNames]
+      [profileId, iban, ...allResolvedNames]
     );
 
     // If no remaining merchants and this was a shared IBAN, remove from shared_ibans
     const removedFromShared =
       isSharedIban && (!remainingMerchants || remainingMerchants.count <= 1);
     if (removedFromShared) {
-      run('DELETE FROM shared_ibans WHERE iban = ?', [normalizedIban]);
+      run('DELETE FROM shared_ibans WHERE iban = ?', [iban]);
     }
 
     res.status(201).json({
@@ -2161,25 +2168,18 @@ router.get('/by-iban/:iban', (req, res) => {
  *       400:
  *         description: Validatiefout
  */
-router.post('/', (req, res) => {
+router.post('/', validate(createAddressBookEntrySchema), (req, res) => {
   try {
     const { iban, name, description, notes, originalName } = req.body;
     const profileId = getEffectiveProfileId(req);
 
-    if (!iban || !name) {
-      return res
-        .status(400)
-        .json({ success: false, error: 'IBAN and name are required' });
-    }
-
-    // Normalize IBAN to uppercase for consistent matching
-    const normalizedIban = iban.toUpperCase().trim();
+    // IBAN is already normalized by schema
     const normalizedName = name.trim();
 
     // Check if this is a shared IBAN (payment processor used by multiple merchants)
     const isSharedIban = queryOne<{ id: number }>(
       'SELECT id FROM shared_ibans WHERE iban = ?',
-      [normalizedIban]
+      [iban]
     );
 
     if (isSharedIban) {
@@ -2190,7 +2190,7 @@ router.post('/', (req, res) => {
       const existingMerchant = queryOne<DBAddressBookEntry>(
         `SELECT * FROM address_book 
          WHERE iban = ? AND original_name = ? AND profile_id = ?`,
-        [normalizedIban, merchantOriginalName, profileId]
+        [iban, merchantOriginalName, profileId]
       );
 
       if (existingMerchant) {
@@ -2219,7 +2219,7 @@ router.post('/', (req, res) => {
       const result = run(
         'INSERT INTO address_book (iban, name, original_name, description, notes, profile_id) VALUES (?, ?, ?, ?, ?, ?)',
         [
-          normalizedIban,
+          iban,
           normalizedName,
           merchantOriginalName,
           description || null,
@@ -2232,7 +2232,7 @@ router.post('/', (req, res) => {
       // Add to contact_ibans for consistency
       run(
         'INSERT OR IGNORE INTO contact_ibans (contact_id, iban, is_primary) VALUES (?, ?, 1)',
-        [newId, normalizedIban]
+        [newId, iban]
       );
 
       const newEntry = queryOne<DBAddressBookEntry>(
@@ -2257,7 +2257,7 @@ router.post('/', (req, res) => {
     // Check if this IBAN is already in the address book (without original_name)
     const existingByIban = queryOne<DBAddressBookEntry>(
       'SELECT * FROM address_book WHERE iban = ? AND original_name IS NULL AND profile_id = ?',
-      [normalizedIban, profileId]
+      [iban, profileId]
     );
 
     if (existingByIban) {
@@ -2272,7 +2272,7 @@ router.post('/', (req, res) => {
       `SELECT ci.contact_id FROM contact_ibans ci 
        JOIN address_book ab ON ci.contact_id = ab.id
        WHERE ci.iban = ? AND ab.profile_id = ?`,
-      [normalizedIban, profileId]
+      [iban, profileId]
     );
 
     if (existingInContactIbans) {
@@ -2305,7 +2305,7 @@ router.post('/', (req, res) => {
       // Add new IBAN to contact_ibans
       run(
         'INSERT OR IGNORE INTO contact_ibans (contact_id, iban, is_primary) VALUES (?, ?, 0)',
-        [contactId, normalizedIban]
+        [contactId, iban]
       );
 
       // Update description/notes if provided and current ones are empty
@@ -2325,25 +2325,19 @@ router.post('/', (req, res) => {
       // Create new contact
       const result = run(
         'INSERT INTO address_book (iban, name, description, notes, profile_id) VALUES (?, ?, ?, ?, ?)',
-        [
-          normalizedIban,
-          normalizedName,
-          description || null,
-          notes || null,
-          profileId,
-        ]
+        [iban, normalizedName, description || null, notes || null, profileId]
       );
       contactId = Number(result.lastInsertRowid);
 
       // Also add to contact_ibans for consistent lookup
       run(
         'INSERT OR IGNORE INTO contact_ibans (contact_id, iban, is_primary) VALUES (?, ?, 1)',
-        [contactId, normalizedIban]
+        [contactId, iban]
       );
     }
 
     // Sync transactions to the new/merged contact
-    syncTransactionsToContact(contactId, profileId, normalizedIban);
+    syncTransactionsToContact(contactId, profileId, iban);
 
     const entry = queryOne<DBAddressBookEntry>(
       'SELECT * FROM address_book WHERE id = ? AND profile_id = ?',

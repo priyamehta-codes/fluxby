@@ -6,6 +6,11 @@ import {
   getEffectiveProfileId,
   // verifyTransactionProfile is available for future use
 } from '../middleware/profileAuth.js';
+import {
+  validate,
+  createTransactionSchema,
+  updateTransactionSchema,
+} from '../middleware/validation.js';
 
 const router = Router();
 
@@ -269,7 +274,7 @@ router.get('/:id', (req, res) => {
  *       500:
  *         description: Server error
  */
-router.post('/', (req, res) => {
+router.post('/', validate(createTransactionSchema), (req, res) => {
   try {
     const profileId = getEffectiveProfileId(req);
     const {
@@ -282,12 +287,6 @@ router.post('/', (req, res) => {
       categoryId,
       notes,
     } = req.body;
-
-    if (!date || amount === undefined || !type || !accountId) {
-      return res
-        .status(400)
-        .json({ success: false, error: 'Missing required fields' });
-    }
 
     // Verify account belongs to profile
     const account = queryOne<{ id: number; profile_id: number }>(
@@ -404,7 +403,7 @@ router.post('/', (req, res) => {
  *       500:
  *         description: Server error
  */
-router.patch('/:id', (req, res) => {
+router.patch('/:id', validate(updateTransactionSchema), (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const {
@@ -420,14 +419,8 @@ router.patch('/:id', (req, res) => {
     const updates: string[] = [];
     const params: unknown[] = [];
 
-    // Allow explicitly setting the type (income, expense, transfer)
+    // Type is already validated by schema
     if (type !== undefined) {
-      if (!['income', 'expense', 'transfer'].includes(type)) {
-        return res.status(400).json({
-          success: false,
-          error: 'Invalid type. Must be income, expense, or transfer',
-        });
-      }
       updates.push('type = ?');
       params.push(type);
 

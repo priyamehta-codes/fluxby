@@ -1,11 +1,17 @@
 import { Router } from 'express';
 import { query, queryOne, run } from '../db/index.js';
-import type { Category, CategoryCreate } from '@fluxby/shared';
+import type { Category } from '@fluxby/shared';
 import {
   getEffectiveProfileId,
   // verifyCategoryProfile is available for future use
 } from '../middleware/profileAuth.js';
 import { SEED_CATEGORIES, getCategoriesForLanguage } from '../db/seed-data.js';
+import {
+  validate,
+  createCategorySchema,
+  updateCategorySchema,
+  createCategoryRuleSchema,
+} from '../middleware/validation.js';
 
 const router = Router();
 
@@ -499,16 +505,10 @@ router.get('/:id', (req, res) => {
  *       400:
  *         description: Naam is verplicht
  */
-router.post('/', (req, res) => {
+router.post('/', validate(createCategorySchema), (req, res) => {
   try {
     const profileId = getEffectiveProfileId(req);
-    const { name, parentId, icon, color }: CategoryCreate = req.body;
-
-    if (!name) {
-      return res
-        .status(400)
-        .json({ success: false, error: 'Name is required' });
-    }
+    const { name, parentId, icon, color } = req.body;
 
     const result = run(
       'INSERT INTO categories (name, parent_id, icon, color, profile_id) VALUES (?, ?, ?, ?, ?)',
@@ -599,7 +599,7 @@ router.delete('/', (req, res) => {
  *       200:
  *         description: Categorie bijgewerkt
  */
-router.patch('/:id', (req, res) => {
+router.patch('/:id', validate(updateCategorySchema), (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const { name, parentId, icon, color, description } = req.body;
@@ -628,12 +628,7 @@ router.patch('/:id', (req, res) => {
       params.push(description);
     }
 
-    if (updates.length === 0) {
-      return res
-        .status(400)
-        .json({ success: false, error: 'No fields to update' });
-    }
-
+    // Schema ensures at least one field is present
     params.push(id);
     run(`UPDATE categories SET ${updates.join(', ')} WHERE id = ?`, params);
 
@@ -765,16 +760,10 @@ router.get('/rules/all', (req, res) => {
  *       201:
  *         description: Regel aangemaakt
  */
-router.post('/rules', (req, res) => {
+router.post('/rules', validate(createCategoryRuleSchema), (req, res) => {
   try {
     const profileId = getEffectiveProfileId(req);
-    const { pattern, categoryId, priority = 0 } = req.body;
-
-    if (!pattern || !categoryId) {
-      return res
-        .status(400)
-        .json({ success: false, error: 'Pattern and categoryId are required' });
-    }
+    const { pattern, categoryId, priority } = req.body;
 
     const patternLower = pattern.toLowerCase();
     const existing = queryOne<{ id: number; category_id: number }>(

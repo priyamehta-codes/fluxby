@@ -322,7 +322,10 @@ router.post('/csv', upload.single('file'), async (req, res) => {
     }
 
     // Convert to our transaction format
-    const transactions = await convertINGToTransactions(ingTransactions, account.id);
+    const transactions = await convertINGToTransactions(
+      ingTransactions,
+      account.id
+    );
 
     // Skip any entries that already exist (scoped to profile)
     const existingHashes = getExistingImportHashes(profileId);
