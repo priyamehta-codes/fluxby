@@ -3,8 +3,16 @@ import { createRoot } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { consumeSessionRedirect, getRedirectToRestore } from '@fluxby/shared';
 import { initializeSettingsCache } from '@fluxby/database';
+import {
+  initErrorTracking,
+  setupGlobalErrorHandlers,
+} from './lib/error-tracking';
 import App from './App';
 import './index.css';
+
+// Initialize error tracking before anything else
+initErrorTracking();
+setupGlobalErrorHandlers();
 
 // GitHub Pages SPA fallback: a custom 404.html stores the original URL in sessionStorage
 // and redirects to /app/. Restore that original URL before React Router mounts.

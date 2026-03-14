@@ -16,6 +16,8 @@ export default tseslint.config(
       '**/dist/**',
       '**/.git/**',
       '**/coverage/**',
+      '**/playwright-report/**',
+      '**/test-results/**',
       '**/*.d.ts',
       '**/vite.config.js', // Ignore transpiled vite configs
       '.github/skills/**/examples/**', // Skill reference examples (documentation)

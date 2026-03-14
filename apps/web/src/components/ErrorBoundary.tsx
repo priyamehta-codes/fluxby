@@ -2,6 +2,7 @@ import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { AlertTriangle, Home, RefreshCw } from 'lucide-react';
 import { resetAppAndRestartOnboarding } from '@/lib/database-reset';
 import { readFromOPFSSync } from '@fluxby/database';
+import { captureError } from '@/lib/error-tracking';
 
 interface Props {
   children: ReactNode;
@@ -24,6 +25,12 @@ export class ErrorBoundary extends Component<Props, State> {
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error('ErrorBoundary caught an error:', error, errorInfo);
+
+    // Report to Sentry with component stack
+    captureError(error, {
+      componentStack: errorInfo.componentStack,
+      source: 'ErrorBoundary',
+    });
 
     // Call the onError callback to close onboarding, etc.
     if (this.props.onError) {

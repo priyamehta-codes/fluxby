@@ -9,6 +9,15 @@
 
 import { Peer, DataConnection } from 'peerjs';
 import type { SyncChange, SyncableRow } from './sync.js';
+import {
+  createEncryptionSession,
+  completeKeyExchange,
+  encryptMessage,
+  decryptMessage,
+  isEncryptedEnvelope,
+  type SyncEncryptionSession,
+  type SyncJsonWebKey,
+} from './sync-encryption.js';
 
 /**
  * ICE Server Configuration
@@ -145,6 +154,7 @@ export function getPeerServerConfig(): PeerServerConfig | undefined {
 
 // Pairing message types
 export type PairingMessage =
+  | { type: 'key-exchange'; publicKey: SyncJsonWebKey }
   | { type: 'pairing-request'; pairingCode: string; deviceName: string }
   | { type: 'pairing-accept'; deviceId: string; deviceName: string }
   | { type: 'pairing-reject'; reason: string }
@@ -224,6 +234,7 @@ export class PeerSync {
   private peer: Peer | null = null;
   private connections: Map<string, DataConnection> = new Map();
   private pairedDevices: Map<string, PeerDevice> = new Map();
+  private encryptionSessions: Map<string, SyncEncryptionSession> = new Map();
   private options: PeerOptions;
   private pendingPairingCode: string | null = null;
   private isInitialized = false;
@@ -451,17 +462,41 @@ export class PeerSync {
    * Handle incoming peer connection
    */
   private handleIncomingConnection(conn: DataConnection): void {
-    conn.on('open', () => {
+    conn.on('open', async () => {
       this.connections.set(conn.peer, conn);
       this.options.onConnectionChange?.(conn.peer, true);
+
+      // Start encryption key exchange
+      try {
+        const session = await createEncryptionSession(conn.peer);
+        this.encryptionSessions.set(conn.peer, session);
+        // Send our public key
+        conn.send({
+          type: 'key-exchange',
+          publicKey: session.localKeyPair.publicKeyJwk,
+        });
+      } catch (err) {
+        console.error('Failed to create encryption session:', err);
+        this.options.onError?.(
+          err instanceof Error ? err : new Error(String(err))
+        );
+      }
     });
 
-    conn.on('data', (data) => {
-      this.handleMessage(conn, data as PairingMessage);
+    conn.on('data', async (data) => {
+      try {
+        await this.handleIncomingData(conn, data);
+      } catch (err) {
+        console.error('Failed to handle incoming data:', err);
+        this.options.onError?.(
+          err instanceof Error ? err : new Error(String(err))
+        );
+      }
     });
 
     conn.on('close', () => {
       this.connections.delete(conn.peer);
+      this.encryptionSessions.delete(conn.peer);
       this.options.onConnectionChange?.(conn.peer, false);
 
       // Update paired device status
@@ -475,6 +510,136 @@ export class PeerSync {
     conn.on('error', (err) => {
       this.options.onError?.(err);
     });
+  }
+
+  /**
+   * Handle incoming data - decrypt if needed and process
+   */
+  private async handleIncomingData(
+    conn: DataConnection,
+    data: unknown
+  ): Promise<void> {
+    // Check if this is a key-exchange message (sent unencrypted)
+    if (
+      typeof data === 'object' &&
+      data !== null &&
+      (data as { type?: string }).type === 'key-exchange'
+    ) {
+      const keyExchangeMsg = data as {
+        type: 'key-exchange';
+        publicKey: SyncJsonWebKey;
+      };
+      const session = this.encryptionSessions.get(conn.peer);
+      if (session) {
+        try {
+          const updatedSession = await completeKeyExchange(
+            session,
+            keyExchangeMsg.publicKey
+          );
+          this.encryptionSessions.set(conn.peer, updatedSession);
+          console.log('Encryption key exchange completed with:', conn.peer);
+        } catch (err) {
+          console.error('Failed to complete key exchange:', err);
+          this.options.onError?.(
+            err instanceof Error ? err : new Error(String(err))
+          );
+          // Close connection if key exchange fails
+          conn.close();
+        }
+      } else {
+        // We received their key first, create our session and respond
+        try {
+          const newSession = await createEncryptionSession(conn.peer);
+          const updatedSession = await completeKeyExchange(
+            newSession,
+            keyExchangeMsg.publicKey
+          );
+          this.encryptionSessions.set(conn.peer, updatedSession);
+          // Send our public key
+          conn.send({
+            type: 'key-exchange',
+            publicKey: newSession.localKeyPair.publicKeyJwk,
+          });
+          console.log('Encryption key exchange completed with:', conn.peer);
+        } catch (err) {
+          console.error('Failed to create/complete key exchange:', err);
+          this.options.onError?.(
+            err instanceof Error ? err : new Error(String(err))
+          );
+          conn.close();
+        }
+      }
+      return;
+    }
+
+    // Try to decrypt if it's an encrypted envelope
+    let message: PairingMessage;
+    if (isEncryptedEnvelope(data)) {
+      const session = this.encryptionSessions.get(conn.peer);
+      if (!session?.isReady) {
+        console.error('Received encrypted message but session not ready');
+        return;
+      }
+      try {
+        message = await decryptMessage<PairingMessage>(session, data);
+      } catch (err) {
+        console.error('Failed to decrypt message:', err);
+        this.options.onError?.(
+          err instanceof Error ? err : new Error(String(err))
+        );
+        return;
+      }
+    } else {
+      // Check if key exchange is complete - reject plaintext if so
+      const session = this.encryptionSessions.get(conn.peer);
+      if (session?.isReady) {
+        console.error(
+          'SECURITY: Received unencrypted message after key exchange from:',
+          conn.peer
+        );
+        this.options.onError?.(
+          new Error(
+            'Security violation: received unencrypted message after key exchange'
+          )
+        );
+        return; // REJECT the message
+      }
+
+      // Allow plaintext only BEFORE key exchange completes (for the initial key-exchange message itself)
+      console.warn(
+        'Received unencrypted message before key exchange from:',
+        conn.peer
+      );
+      message = data as PairingMessage;
+    }
+
+    this.handleMessage(conn, message);
+  }
+
+  /**
+   * Send an encrypted message to a peer
+   */
+  private async sendEncrypted(
+    conn: DataConnection,
+    message: PairingMessage
+  ): Promise<void> {
+    const session = this.encryptionSessions.get(conn.peer);
+    if (session?.isReady) {
+      const { envelope, session: updatedSession } = await encryptMessage(
+        session,
+        message
+      );
+      this.encryptionSessions.set(conn.peer, updatedSession);
+      conn.send(envelope);
+    } else {
+      // Session not ready - this shouldn't happen in normal flow
+      // Key exchange should complete before other messages are sent
+      console.error(
+        'Cannot send encrypted message - session not ready for:',
+        conn.peer
+      );
+      throw new Error('Encryption session not ready');
+    }
   }
 
   /**
@@ -524,8 +689,8 @@ export class PeerSync {
         ? await this.options.onSyncRequested(conn.peer)
         : [];
 
-      // Send sync response with our changes
-      conn.send({
+      // Send encrypted sync response with our changes
+      await this.sendEncrypted(conn, {
         type: 'sync-response',
         changes,
       });
@@ -541,14 +706,14 @@ export class PeerSync {
   /**
    * Handle incoming pairing request
    */
-  private handlePairingRequest(
+  private async handlePairingRequest(
     conn: DataConnection,
     message: {
       type: 'pairing-request';
       pairingCode: string;
       deviceName: string;
     }
-  ): void {
+  ): Promise<void> {
     // Verify pairing code
     if (
       this.pendingPairingCode &&
@@ -566,19 +731,27 @@ export class PeerSync {
       this.pairedDevices.set(device.id, device);
       this.pendingPairingCode = null;
 
-      // Send acceptance
-      conn.send({
-        type: 'pairing-accept',
-        deviceId: this.options.deviceId,
-        deviceName: this.options.deviceName,
-      });
+      // Send encrypted acceptance
+      try {
+        await this.sendEncrypted(conn, {
+          type: 'pairing-accept',
+          deviceId: this.options.deviceId,
+          deviceName: this.options.deviceName,
+        });
+      } catch (err) {
+        console.error('Failed to send pairing accept:', err);
+        this.options.onError?.(
+          err instanceof Error ? err : new Error(String(err))
+        );
+        return;
+      }
 
       this.options.onPaired?.(device);
     } else if (this.options.onPairingRequest) {
       // Ask user to accept/reject
       this.options.onPairingRequest(
         message.deviceName,
-        () => {
+        async () => {
           // Accept
           const device: PeerDevice = {
             id: conn.peer,
@@ -590,28 +763,44 @@ export class PeerSync {
 
           this.pairedDevices.set(device.id, device);
 
-          conn.send({
-            type: 'pairing-accept',
-            deviceId: this.options.deviceId,
-            deviceName: this.options.deviceName,
-          });
+          try {
+            await this.sendEncrypted(conn, {
+              type: 'pairing-accept',
+              deviceId: this.options.deviceId,
+              deviceName: this.options.deviceName,
+            });
+          } catch (err) {
+            console.error('Failed to send pairing accept:', err);
+            this.options.onError?.(
+              err instanceof Error ? err : new Error(String(err))
+            );
+            return;
+          }
 
           this.options.onPaired?.(device);
         },
-        () => {
+        async () => {
           // Reject
-          conn.send({
-            type: 'pairing-reject',
-            reason: 'User rejected pairing request',
-          });
+          try {
+            await this.sendEncrypted(conn, {
+              type: 'pairing-reject',
+              reason: 'User rejected pairing request',
+            });
+          } catch (err) {
+            console.error('Failed to send pairing reject:', err);
+          }
         }
       );
     } else {
       // No handler, reject
-      conn.send({
-        type: 'pairing-reject',
-        reason: 'Pairing not allowed',
-      });
+      try {
+        await this.sendEncrypted(conn, {
+          type: 'pairing-reject',
+          reason: 'Pairing not allowed',
+        });
+      } catch (err) {
+        console.error('Failed to send pairing reject:', err);
+      }
     }
   }
 
@@ -666,6 +855,8 @@ export class PeerSync {
 
       let isResolved = false;
       let connectionAttempted = false;
+      // Note: keyExchangeComplete flag tracked for future debugging/assertions
+      let _keyExchangeComplete = false;
 
       const conn = this.peer.connect(targetPeerId, {
         reliable: true,
@@ -689,23 +880,86 @@ export class PeerSync {
       }, 20000);
 
       // Track when we actually start attempting connection
-      conn.on('open', () => {
+      conn.on('open', async () => {
         if (isResolved) return;
         connectionAttempted = true;
         this.connections.set(conn.peer, conn);
         this.options.onConnectionChange?.(conn.peer, true);
 
-        // Send pairing request
-        conn.send({
-          type: 'pairing-request',
-          pairingCode,
-          deviceName: this.options.deviceName,
-        });
+        // Start encryption key exchange
+        try {
+          const session = await createEncryptionSession(conn.peer);
+          this.encryptionSessions.set(conn.peer, session);
+          // Send our public key
+          conn.send({
+            type: 'key-exchange',
+            publicKey: session.localKeyPair.publicKeyJwk,
+          });
+        } catch (err) {
+          console.error('Failed to create encryption session:', err);
+          isResolved = true;
+          clearTimeout(timeout);
+          reject(err instanceof Error ? err : new Error(String(err)));
+        }
       });
 
-      conn.on('data', (data) => {
+      conn.on('data', async (data) => {
         if (isResolved) return;
-        const message = data as PairingMessage;
+
+        // Handle key-exchange message (sent unencrypted)
+        if (
+          typeof data === 'object' &&
+          data !== null &&
+          (data as { type?: string }).type === 'key-exchange'
+        ) {
+          const keyExchangeMsg = data as {
+            type: 'key-exchange';
+            publicKey: SyncJsonWebKey;
+          };
+          const session = this.encryptionSessions.get(conn.peer);
+          if (session) {
+            try {
+              const updatedSession = await completeKeyExchange(
+                session,
+                keyExchangeMsg.publicKey
+              );
+              this.encryptionSessions.set(conn.peer, updatedSession);
+              _keyExchangeComplete = true;
+              console.log('Encryption key exchange completed with:', conn.peer);
+
+              // Now send encrypted pairing request
+              await this.sendEncrypted(conn, {
+                type: 'pairing-request',
+                pairingCode,
+                deviceName: this.options.deviceName,
+              });
+            } catch (err) {
+              console.error('Failed to complete key exchange:', err);
+              isResolved = true;
+              clearTimeout(timeout);
+              reject(err instanceof Error ? err : new Error(String(err)));
+            }
+          }
+          return;
+        }
+
+        // Decrypt if encrypted
+        let message: PairingMessage;
+        if (isEncryptedEnvelope(data)) {
+          const session = this.encryptionSessions.get(conn.peer);
+          if (!session?.isReady) {
+            console.error('Received encrypted message but session not ready');
+            return;
+          }
+          try {
+            message = await decryptMessage<PairingMessage>(session, data);
+          } catch (err) {
+            console.error('Failed to decrypt message:', err);
+            return;
+          }
+        } else {
+          message = data as PairingMessage;
+        }
 
         if (message.type === 'pairing-accept') {
           isResolved = true;
@@ -754,7 +1008,7 @@ export class PeerSync {
   /**
    * Send sync changes to a specific device
    */
-  sendChanges(deviceId: string, changes: SyncChange[]): void {
+  async sendChanges(deviceId: string, changes: SyncChange[]): Promise<void> {
     const device = this.pairedDevices.get(deviceId);
     if (!device) {
       throw new Error(`Device ${deviceId} not found`);
@@ -765,7 +1019,7 @@ export class PeerSync {
       throw new Error(`Not connected to device ${deviceId}`);
     }
 
-    conn.send({
+    await this.sendEncrypted(conn, {
       type: 'sync-push',
       changes,
     });
@@ -776,7 +1030,10 @@ export class PeerSync {
   /**
    * Request sync from a specific device
    */
-  requestSync(deviceId: string, sinceTimestamp: number = 0): void {
+  async requestSync(
+    deviceId: string,
+    sinceTimestamp: number = 0
+  ): Promise<void> {
     const device = this.pairedDevices.get(deviceId);
     if (!device) {
       throw new Error(`Device ${deviceId} not found`);
@@ -787,7 +1044,7 @@ export class PeerSync {
       throw new Error(`Not connected to device ${deviceId}`);
     }
 
-    conn.send({
+    await this.sendEncrypted(conn, {
       type: 'sync-request',
       sinceTimestamp,
     });
@@ -796,22 +1053,32 @@ export class PeerSync {
   /**
    * Broadcast changes to all connected devices
    */
-  broadcastChanges(changes: SyncChange[]): void {
+  async broadcastChanges(changes: SyncChange[]): Promise<void> {
+    const sendPromises: Promise<void>[] = [];
+
     for (const [peerId, conn] of this.connections) {
       if (conn.open) {
-        conn.send({
-          type: 'sync-push',
-          changes,
-        });
-
-        // Update last sync time for paired devices
-        for (const device of this.pairedDevices.values()) {
-          if (device.peerId === peerId) {
-            device.lastSyncAt = Date.now();
-          }
-        }
+        sendPromises.push(
+          this.sendEncrypted(conn, {
+            type: 'sync-push',
+            changes,
+          })
+            .then(() => {
+              // Update last sync time for paired devices
+              for (const device of this.pairedDevices.values()) {
+                if (device.peerId === peerId) {
+                  device.lastSyncAt = Date.now();
+                }
+              }
+            })
+            .catch((err) => {
+              console.error(`Failed to broadcast to ${peerId}:`, err);
+            })
+        );
       }
     }
+
+    await Promise.all(sendPromises);
   }
 
   /**
@@ -844,6 +1111,7 @@ export class PeerSync {
       const conn = this.connections.get(device.peerId);
       conn?.close();
       this.connections.delete(device.peerId);
+      this.encryptionSessions.delete(device.peerId);
       this.pairedDevices.delete(deviceId);
     }
   }
@@ -857,6 +1125,7 @@ export class PeerSync {
     }
     this.connections.clear();
     this.pairedDevices.clear();
+    this.encryptionSessions.clear();
     this.peer?.destroy();
     this.peer = null;
     this.isInitialized = false;
