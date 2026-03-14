@@ -1,3 +1,10 @@
+/**
+ * Rate Limiting Middleware
+ *
+ * NOTE: Default memory store is NOT shared across Node.js cluster workers.
+ * For clustered deployments, configure an external store (e.g., rate-limit-redis).
+ */
+
 import rateLimit from 'express-rate-limit';
 
 /**
@@ -15,23 +22,15 @@ import rateLimit from 'express-rate-limit';
  * - RateLimit-Reset: Unix timestamp when the rate limit resets
  */
 
-// Parse environment variables with defaults
-const globalWindowMs = parseInt(
-  process.env.RATE_LIMIT_WINDOW_MS || '900000',
-  10
-); // 15 minutes
-const globalMaxRequests = parseInt(
-  process.env.RATE_LIMIT_MAX_REQUESTS || '100',
-  10
-);
-const sensitiveWindowMs = parseInt(
-  process.env.RATE_LIMIT_SENSITIVE_WINDOW_MS || '60000',
-  10
-); // 1 minute
-const sensitiveMaxRequests = parseInt(
-  process.env.RATE_LIMIT_SENSITIVE_MAX_REQUESTS || '10',
-  10
-);
+// Parse environment variables with defaults (|| fallback handles NaN from invalid input)
+const globalWindowMs =
+  parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000', 10) || 900000; // 15 minutes
+const globalMaxRequests =
+  parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '100', 10) || 100;
+const sensitiveWindowMs =
+  parseInt(process.env.RATE_LIMIT_SENSITIVE_WINDOW_MS || '60000', 10) || 60000; // 1 minute
+const sensitiveMaxRequests =
+  parseInt(process.env.RATE_LIMIT_SENSITIVE_MAX_REQUESTS || '10', 10) || 10;
 
 /**
  * Global rate limiter applied to all API routes.

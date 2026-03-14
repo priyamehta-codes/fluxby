@@ -38,6 +38,7 @@ initializeDatabase();
 
 // Create Express app
 const app = express();
+app.set('trust proxy', 1); // Trust first proxy
 const _PORT = process.env.PORT || 3001; // Prefixed with _ as it's only used in index.ts
 
 // Middleware
