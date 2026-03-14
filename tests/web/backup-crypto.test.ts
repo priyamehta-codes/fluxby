@@ -136,6 +136,18 @@ describe('backup-crypto', () => {
       // Salts should be different
       expect(encrypted1.salt).not.toEqual(encrypted2.salt);
     });
+
+    it('throws error for password shorter than 4 characters', async () => {
+      await expect(encryptBackup(sampleBackup, 'abc')).rejects.toThrow(
+        'Password must be at least 4 characters'
+      );
+    });
+
+    it('throws error for empty password', async () => {
+      await expect(encryptBackup(sampleBackup, '')).rejects.toThrow(
+        'Password must be at least 4 characters'
+      );
+    });
   });
 
   describe('isEncryptedBackup', () => {

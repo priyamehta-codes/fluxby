@@ -54,8 +54,6 @@ export function DataManagementSettings() {
   const [passwordDialog, setPasswordDialog] = useState<{
     open: boolean;
     mode: 'export' | 'import';
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    pendingData?: any;
     pendingFile?: File;
   }>({ open: false, mode: 'export' });
   const [passwordInput, setPasswordInput] = useState('');
@@ -497,6 +495,8 @@ export function DataManagementSettings() {
               <Input
                 id='backup-password'
                 type='password'
+                autoFocus
+                autoComplete='new-password'
                 value={passwordInput}
                 onChange={(e) => {
                   setPasswordInput(e.target.value);

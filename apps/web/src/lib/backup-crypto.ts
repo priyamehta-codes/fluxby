@@ -86,6 +86,11 @@ export async function encryptBackup(
   data: PlainBackup,
   password: string
 ): Promise<EncryptedBackup> {
+  // Validate password
+  if (!password || password.length < 4) {
+    throw new Error('Password must be at least 4 characters');
+  }
+
   // Generate random salt and nonce
   const salt = crypto.getRandomValues(new Uint8Array(SALT_LENGTH));
   const nonce = crypto.getRandomValues(new Uint8Array(NONCE_LENGTH));
