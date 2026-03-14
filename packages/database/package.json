@@ -34,6 +34,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@fluxby/shared": "*",
     "@journeyapps/wa-sqlite": "^1.4.1",
     "peerjs": "^1.5.4"
   },
