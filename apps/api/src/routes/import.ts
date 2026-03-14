@@ -11,6 +11,7 @@ import {
 } from '../services/csv-parser.js';
 import { applyCategoryRules } from '../services/categorization.js';
 import { getEffectiveProfileId } from '../middleware/profileAuth.js';
+import { isRegexSafe, escapeRegex } from '../utils/index.js';
 import type { TransactionCreate } from '@fluxby/shared';
 
 const router = Router();
@@ -39,6 +40,13 @@ function applyCleanupRules(name: string, rules: { pattern: string }[]): string {
         const lastSlash = rule.pattern.lastIndexOf('/');
         const pattern = rule.pattern.slice(1, lastSlash);
         const flags = rule.pattern.slice(lastSlash + 1) || 'gi';
+
+        // Validate pattern safety before using
+        if (!isRegexSafe(pattern)) {
+          console.warn(`Unsafe regex pattern blocked in import: ${pattern}`);
+          continue;
+        }
+
         const regex = new RegExp(pattern, flags);
         cleaned = cleaned.replace(regex, '').trim();
       } catch {
@@ -48,10 +56,7 @@ function applyCleanupRules(name: string, rules: { pattern: string }[]): string {
     } else {
       // For literal patterns, use case-insensitive global replacement
       // Pattern 'SumUp *' matches the literal string 'SumUp *'
-      const escapedPattern = rule.pattern.replace(
-        /[.*+?^${}()|[\]\\]/g,
-        '\\$&'
-      );
+      const escapedPattern = escapeRegex(rule.pattern);
       cleaned = cleaned.replace(new RegExp(escapedPattern, 'gi'), '').trim();
     }
   }

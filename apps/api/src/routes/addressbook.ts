@@ -13,34 +13,9 @@ import {
   createPaymentProviderRuleSchema,
   updatePaymentProviderRuleSchema,
 } from '../middleware/validation.js';
+import { isRegexSafe, escapeRegex } from '../utils/index.js';
 
 const router = Router();
-
-/**
- * Validate a regex pattern for safety (prevent ReDoS attacks)
- * Returns true if the pattern is safe, false otherwise
- */
-function isRegexSafe(pattern: string): boolean {
-  // Block dangerous patterns that could cause ReDoS
-  const dangerousPatterns = [
-    /(\+|\*|\{[0-9]+,\})\s*(\+|\*|\{[0-9]+,\})/, // Nested quantifiers
-    /\(\?[^)]*\(/, // Nested groups with modifiers
-    /\\1/, // Backreferences can be dangerous
-  ];
-
-  for (const dangerous of dangerousPatterns) {
-    if (dangerous.test(pattern)) {
-      return false;
-    }
-  }
-
-  // Limit pattern length to prevent extremely complex patterns
-  if (pattern.length > 200) {
-    return false;
-  }
-
-  return true;
-}
 
 /**
  * Safely execute a regex replacement with timeout protection
@@ -114,10 +89,7 @@ function applyCleanupRules(name: string, rules: { pattern: string }[]): string {
     } else {
       // For literal patterns, use case-insensitive global replacement
       // Pattern 'SumUp *' matches the literal string 'SumUp *'
-      const escapedPattern = rule.pattern.replace(
-        /[.*+?^${}()|[\]\\]/g,
-        '\\$&'
-      );
+      const escapedPattern = escapeRegex(rule.pattern);
       cleaned = cleaned.replace(new RegExp(escapedPattern, 'gi'), '').trim();
     }
   }
