@@ -57,11 +57,28 @@ const queryClient = new QueryClient({
 const rootElement = document.getElementById('root');
 
 // Show error on screen for debugging (especially in Tauri where console isn't visible)
+// Uses DOM APIs instead of innerHTML to prevent XSS vulnerabilities
 function showErrorOnScreen(message: string, error: unknown) {
   const errorDiv = document.createElement('div');
   errorDiv.style.cssText =
     'position:fixed;top:0;left:0;right:0;bottom:0;background:#1a1a2e;color:#fff;padding:40px;font-family:monospace;white-space:pre-wrap;overflow:auto;z-index:99999';
-  errorDiv.innerHTML = `<h1 style="color:#f87171">App Initialization Error</h1><p>${message}</p><pre style="background:#0f0f1a;padding:20px;border-radius:8px;margin-top:20px">${error instanceof Error ? error.stack || error.message : String(error)}</pre>`;
+
+  const h1 = document.createElement('h1');
+  h1.style.color = '#f87171';
+  h1.textContent = 'App Initialization Error';
+
+  const p = document.createElement('p');
+  p.textContent = message;
+
+  const pre = document.createElement('pre');
+  pre.style.cssText =
+    'background:#0f0f1a;padding:20px;border-radius:8px;margin-top:20px';
+  pre.textContent =
+    error instanceof Error ? error.stack || error.message : String(error);
+
+  errorDiv.appendChild(h1);
+  errorDiv.appendChild(p);
+  errorDiv.appendChild(pre);
   document.body.appendChild(errorDiv);
 }
 
