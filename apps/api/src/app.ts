@@ -5,6 +5,11 @@ import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import swaggerUi from 'swagger-ui-express';
 
+import {
+  globalRateLimiter,
+  sensitiveRateLimiter,
+} from './middleware/rate-limit.js';
+
 import { initializeDatabase } from './db/index.js';
 import { swaggerSpec } from './swagger.js';
 import transactionsRouter from './routes/transactions.js';
@@ -60,6 +65,10 @@ const corsOptions = (() => {
 app.use(cors(corsOptions));
 app.use(express.json());
 
+// Rate limiting - global limiter for all API routes
+// See middleware/rate-limit.ts for configuration via environment variables
+app.use('/api', globalRateLimiter);
+
 // Performance logging for API requests
 app.use((req, res, next) => {
   const start = Date.now();
@@ -95,15 +104,19 @@ try {
 
 // Routes
 app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
-app.use('/api/profiles', profilesRouter);
+
+// Apply stricter rate limits to sensitive endpoints
+app.use('/api/profiles', sensitiveRateLimiter, profilesRouter);
+app.use('/api/import', sensitiveRateLimiter, importRouter);
+app.use('/api/data', sensitiveRateLimiter, dataRouter);
+
+// Standard routes (global rate limit only)
 app.use('/api/transactions', transactionsRouter);
 app.use('/api/categories', categoriesRouter);
 app.use('/api/accounts', accountsRouter);
 app.use('/api/budgets', budgetsRouter);
-app.use('/api/import', importRouter);
 app.use('/api/analytics', analyticsRouter);
 app.use('/api/user', userRouter);
-app.use('/api/data', dataRouter);
 app.use('/api/addressbook', addressbookRouter);
 app.use('/api/recurring', recurringRouter);
 
