@@ -32,7 +32,6 @@ import {
   verifyBackupChecksum,
   addChecksumToBackup,
   getBackupFilename,
-  ENCRYPTED_EXTENSION,
   type PlainBackup,
 } from '@/lib/backup-crypto';
 

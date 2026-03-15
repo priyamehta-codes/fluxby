@@ -9,6 +9,7 @@
  * - Legacy migration: generates wrapped key on unlock
  * - Wrong password: fails to unlock
  */
+/* eslint-disable @typescript-eslint/no-non-null-assertion */
 /** @vitest-environment jsdom */
 import React, { useEffect } from 'react';
 import { render, waitFor, act } from '@testing-library/react';

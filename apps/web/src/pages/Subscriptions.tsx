@@ -793,12 +793,14 @@ export default function Subscriptions() {
                                 size='sm'
                                 variant='ghost'
                                 className='h-8 w-8 p-0 text-red-600 hover:bg-red-600 hover:text-white focus:ring-0 focus:outline-none'
-                                onClick={() =>
-                                  handleRejectPriceChange(
-                                    alert.pattern.id,
-                                    alert.newAmount!
-                                  )
-                                }
+                                onClick={() => {
+                                  if (alert.newAmount !== undefined) {
+                                    handleRejectPriceChange(
+                                      alert.pattern.id,
+                                      alert.newAmount
+                                    );
+                                  }
+                                }}
                               >
                                 <X className='h-4 w-4' />
                               </Button>

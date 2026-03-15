@@ -269,13 +269,11 @@ export class PersistentSyncQueue extends SyncQueue {
    * Load queue from IndexedDB
    */
   private async loadFromDB(): Promise<void> {
-    if (!this.db) return;
+    const db = this.db;
+    if (!db) return;
 
     return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction(
-        SYNC_QUEUE_STORE_NAME,
-        'readonly'
-      );
+      const transaction = db.transaction(SYNC_QUEUE_STORE_NAME, 'readonly');
       const store = transaction.objectStore(SYNC_QUEUE_STORE_NAME);
       const request = store.getAll();
 
@@ -301,13 +299,11 @@ export class PersistentSyncQueue extends SyncQueue {
    * Save an item to IndexedDB
    */
   private async saveItem(item: SyncQueueItem): Promise<void> {
-    if (!this.db) return;
+    const db = this.db;
+    if (!db) return;
 
     return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction(
-        SYNC_QUEUE_STORE_NAME,
-        'readwrite'
-      );
+      const transaction = db.transaction(SYNC_QUEUE_STORE_NAME, 'readwrite');
       const store = transaction.objectStore(SYNC_QUEUE_STORE_NAME);
       const request = store.put(item);
 
@@ -327,13 +323,11 @@ export class PersistentSyncQueue extends SyncQueue {
    * Remove an item from IndexedDB
    */
   private async removeItem(id: string): Promise<void> {
-    if (!this.db) return;
+    const db = this.db;
+    if (!db) return;
 
     return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction(
-        SYNC_QUEUE_STORE_NAME,
-        'readwrite'
-      );
+      const transaction = db.transaction(SYNC_QUEUE_STORE_NAME, 'readwrite');
       const store = transaction.objectStore(SYNC_QUEUE_STORE_NAME);
       const request = store.delete(id);
 
@@ -353,13 +347,11 @@ export class PersistentSyncQueue extends SyncQueue {
    * Clear all items from IndexedDB
    */
   private async clearDB(): Promise<void> {
-    if (!this.db) return;
+    const db = this.db;
+    if (!db) return;
 
     return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction(
-        SYNC_QUEUE_STORE_NAME,
-        'readwrite'
-      );
+      const transaction = db.transaction(SYNC_QUEUE_STORE_NAME, 'readwrite');
       const store = transaction.objectStore(SYNC_QUEUE_STORE_NAME);
       const request = store.clear();
 

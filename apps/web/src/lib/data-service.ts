@@ -3619,6 +3619,7 @@ export function createDataService(db: Database) {
     > {
       const pid = profileId();
       if (!pid) {
+        // eslint-disable-next-line no-console
         console.log('[SharedIBANs] No profile ID');
         return [];
       }
@@ -3642,6 +3643,7 @@ export function createDataService(db: Database) {
         [pid, pid]
       )) as Array<{ iban: string; name_count: number }>;
 
+      // eslint-disable-next-line no-console
       console.log(
         '[SharedIBANs] Initial query found:',
         sharedIbans.length,
@@ -3769,6 +3771,7 @@ export function createDataService(db: Database) {
         }
       }
 
+      // eslint-disable-next-line no-console
       console.log('[SharedIBANs] Returning', result.length, 'shared IBANs');
       return result;
     },
@@ -4886,6 +4889,7 @@ export function createDataService(db: Database) {
       updated: number;
     }> {
       const pid = profileId();
+      // eslint-disable-next-line no-console
       console.log('[detectRecurringPatterns] Profile ID:', pid);
       if (!pid) return { detected: 0, updated: 0 };
 
@@ -4988,6 +4992,7 @@ export function createDataService(db: Database) {
         [pid, twelveMonthsAgoStr]
       );
 
+      // eslint-disable-next-line no-console
       console.log(
         '[detectRecurringPatterns] Loaded transactions:',
         allTransactions.length,
@@ -5012,10 +5017,12 @@ export function createDataService(db: Database) {
         // Use normalized merchant name for grouping key
         const normalizedName = normalizeMerchantName(tx.merchant_name);
         const key = `${tx.opposing_iban || 'null'}:${normalizedName}`;
-        if (!merchantGroups.has(key)) {
-          merchantGroups.set(key, []);
+        let group = merchantGroups.get(key);
+        if (!group) {
+          group = [];
+          merchantGroups.set(key, group);
         }
-        merchantGroups.get(key)!.push({
+        group.push({
           id: tx.id,
           opposing_iban: tx.opposing_iban,
           originalMerchantName: tx.merchant_name,
@@ -5090,6 +5097,7 @@ export function createDataService(db: Database) {
         }
       }
 
+      // eslint-disable-next-line no-console
       console.log(
         '[detectRecurringPatterns] Candidate groups:',
         groups.length,
@@ -5125,10 +5133,12 @@ export function createDataService(db: Database) {
       >();
       for (const pattern of allExistingPatterns) {
         const key = pattern.merchant_name || 'null';
-        if (!existingPatternsMap.has(key)) {
-          existingPatternsMap.set(key, []);
+        let patternList = existingPatternsMap.get(key);
+        if (!patternList) {
+          patternList = [];
+          existingPatternsMap.set(key, patternList);
         }
-        existingPatternsMap.get(key)!.push({
+        patternList.push({
           id: pattern.id,
           is_dismissed: pattern.is_dismissed,
           avg_amount: pattern.avg_amount,
@@ -5147,6 +5157,7 @@ export function createDataService(db: Database) {
             const amounts = group.amounts;
 
             if (dates.length < MIN_TRANSACTIONS_FOR_PATTERN) {
+              // eslint-disable-next-line no-console
               console.log(
                 `[detectRecurringPatterns] Skip ${group.merchant_name}: only ${dates.length} txns (need ${MIN_TRANSACTIONS_FOR_PATTERN})`
               );
@@ -5164,6 +5175,7 @@ export function createDataService(db: Database) {
             // For monthly patterns, require at least 180 days span (6 months)
             // This ensures we have at least 6 payments over 6 months
             if (daySpan < MIN_MONTHS_SPAN_DAYS) {
+              // eslint-disable-next-line no-console
               console.log(
                 `[detectRecurringPatterns] Skip ${group.merchant_name}: span ${daySpan} days (need ${MIN_MONTHS_SPAN_DAYS})`
               );
@@ -5193,6 +5205,7 @@ export function createDataService(db: Database) {
             }
 
             if (!patternType) {
+              // eslint-disable-next-line no-console
               console.log(
                 `[detectRecurringPatterns] Skip ${group.merchant_name}: avgInterval ${avgInterval.toFixed(1)} doesn't match any pattern type`
               );
@@ -5215,12 +5228,14 @@ export function createDataService(db: Database) {
                 (interval) =>
                   Math.abs(interval - avgInterval) > DATE_TOLERANCE_DAYS
               );
+              // eslint-disable-next-line no-console
               console.log(
                 `[detectRecurringPatterns] Skip ${group.merchant_name}: inconsistent intervals (${(consistencyRatio * 100).toFixed(0)}% < ${MIN_CONSISTENCY_RATIO * 100}%). Avg: ${avgInterval.toFixed(1)}, bad: ${inconsistentIntervals.join(', ')}, tolerance: ${DATE_TOLERANCE_DAYS}`
               );
               continue;
             }
 
+            // eslint-disable-next-line no-console
             console.log(
               `[detectRecurringPatterns] VALID pattern: ${group.merchant_name}, type: ${patternType}, ${dates.length} txns, avgInterval: ${avgInterval.toFixed(1)}, consistency: ${(consistencyRatio * 100).toFixed(0)}%`
             );
@@ -5256,6 +5271,7 @@ export function createDataService(db: Database) {
             const existingPatterns = existingPatternsMap.get(merchantKey) || [];
 
             if (existingPatterns.length > 0) {
+              // eslint-disable-next-line no-console
               console.log(
                 `[detectRecurringPatterns] Found ${existingPatterns.length} existing patterns for "${group.merchant_name}":`,
                 existingPatterns.map(
@@ -5290,12 +5306,14 @@ export function createDataService(db: Database) {
             if (existing) {
               // Skip if dismissed - don't update dismissed patterns
               if (existing.is_dismissed === 1) {
+                // eslint-disable-next-line no-console
                 console.log(
                   `[detectRecurringPatterns] Skip ${group.merchant_name}: existing pattern is dismissed`
                 );
                 continue;
               }
 
+              // eslint-disable-next-line no-console
               console.log(
                 `[detectRecurringPatterns] Update existing pattern for ${group.merchant_name}`
               );
@@ -5357,6 +5375,7 @@ export function createDataService(db: Database) {
                   now,
                 ]
               );
+              // eslint-disable-next-line no-console
               console.log(
                 `[detectRecurringPatterns] Created new pattern: ${group.merchant_name}, amount: ${avgAmount.toFixed(2)}`
               );
