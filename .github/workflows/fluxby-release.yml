@@ -1,5 +1,6 @@
 name: 'Fluxby Release'
-description: 'Builds, tags, and publishes a new Fluxby release when a version tag (v*) is pushed. Do not run manually.'
+# Builds, tags, and publishes a new Fluxby release when a version tag (v*) is pushed.
+# Do not run manually.
 
 on:
   push:
