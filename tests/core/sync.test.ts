@@ -686,4 +686,231 @@ describe('sync.ts', () => {
       expect(deleted.name).toBe('Test');
     });
   });
+
+  describe('LWW Conflict Resolution Edge Cases', () => {
+    const localDeviceId = 'device-local';
+
+    it('should handle concurrent edits within 1ms timestamp precision', () => {
+      // Both devices edit at exactly the same timestamp
+      const localRows = new Map<string, SyncableRow>([
+        [
+          'tx-1',
+          {
+            id: 'tx-1',
+            updated_at: 1705323600000, // Exact timestamp
+            is_deleted: false,
+            device_id: localDeviceId,
+          },
+        ],
+      ]);
+
+      const remoteChanges: SyncChange<SyncableRow>[] = [
+        {
+          table: 'transactions',
+          row: {
+            id: 'tx-1',
+            updated_at: 1705323600000, // Exact same timestamp
+            is_deleted: false,
+            device_id: 'device-remote',
+          },
+        },
+      ];
+
+      const result = mergeChanges(localRows, remoteChanges, localDeviceId);
+
+      // Same timestamp uses device_id as tiebreaker - not recorded as conflict
+      // 'device-remote' > 'device-local', so remote wins
+      expect(result.applied).toBe(1);
+      expect(result.skipped).toBe(0);
+      expect(localRows.get('tx-1')?.device_id).toBe('device-remote');
+    });
+
+    it('should handle edit-delete conflict (delete wins if newer)', () => {
+      const localRows = new Map<string, SyncableRow>([
+        [
+          'tx-1',
+          {
+            id: 'tx-1',
+            updated_at: 1000,
+            is_deleted: false,
+            device_id: localDeviceId,
+          },
+        ],
+      ]);
+
+      // Remote deletes after local edit
+      const remoteChanges: SyncChange<SyncableRow>[] = [
+        {
+          table: 'transactions',
+          row: {
+            id: 'tx-1',
+            updated_at: 2000, // Newer
+            is_deleted: true, // Deleted
+            device_id: 'device-remote',
+          },
+        },
+      ];
+
+      const result = mergeChanges(localRows, remoteChanges, localDeviceId);
+
+      expect(result.applied).toBe(1);
+      expect(localRows.get('tx-1')?.is_deleted).toBe(true);
+    });
+
+    it('should handle resurrection conflict (un-delete wins if newer)', () => {
+      // Local has deleted row
+      const localRows = new Map<string, SyncableRow>([
+        [
+          'tx-1',
+          {
+            id: 'tx-1',
+            updated_at: 1000,
+            is_deleted: true,
+            device_id: localDeviceId,
+          },
+        ],
+      ]);
+
+      // Remote un-deletes (edits after delete)
+      const remoteChanges: SyncChange<SyncableRow>[] = [
+        {
+          table: 'transactions',
+          row: {
+            id: 'tx-1',
+            updated_at: 2000, // Newer edit after delete
+            is_deleted: false, // Resurrected
+            device_id: 'device-remote',
+          },
+        },
+      ];
+
+      const result = mergeChanges(localRows, remoteChanges, localDeviceId);
+
+      expect(result.applied).toBe(1);
+      expect(localRows.get('tx-1')?.is_deleted).toBe(false);
+    });
+
+    it('should handle multiple conflicting changes to same row', () => {
+      const localRows = new Map<string, SyncableRow>([
+        [
+          'tx-1',
+          {
+            id: 'tx-1',
+            updated_at: 1000,
+            is_deleted: false,
+            device_id: localDeviceId,
+          },
+        ],
+      ]);
+
+      // Multiple remote changes for same row (e.g., replayed from different devices)
+      const remoteChanges: SyncChange<SyncableRow>[] = [
+        {
+          table: 'transactions',
+          row: {
+            id: 'tx-1',
+            updated_at: 1500,
+            is_deleted: false,
+            device_id: 'device-A',
+          },
+        },
+        {
+          table: 'transactions',
+          row: {
+            id: 'tx-1',
+            updated_at: 2000, // This one should win
+            is_deleted: false,
+            device_id: 'device-B',
+          },
+        },
+        {
+          table: 'transactions',
+          row: {
+            id: 'tx-1',
+            updated_at: 1800,
+            is_deleted: false,
+            device_id: 'device-C',
+          },
+        },
+      ];
+
+      const _result = mergeChanges(localRows, remoteChanges, localDeviceId);
+
+      // device-B's change (at 2000) should win
+      expect(localRows.get('tx-1')?.device_id).toBe('device-B');
+    });
+
+    it('should handle clock drift with future timestamps', () => {
+      const now = Date.now();
+      const futureTime = now + 24 * 60 * 60 * 1000; // 1 day in future
+
+      const localRows = new Map<string, SyncableRow>([
+        [
+          'tx-1',
+          {
+            id: 'tx-1',
+            updated_at: now,
+            is_deleted: false,
+            device_id: localDeviceId,
+          },
+        ],
+      ]);
+
+      // Remote has clock drift - timestamp in future
+      const remoteChanges: SyncChange<SyncableRow>[] = [
+        {
+          table: 'transactions',
+          row: {
+            id: 'tx-1',
+            updated_at: futureTime,
+            is_deleted: false,
+            device_id: 'device-drifted',
+          },
+        },
+      ];
+
+      const result = mergeChanges(localRows, remoteChanges, localDeviceId);
+
+      // Future timestamp wins (LWW doesn't prevent clock drift)
+      expect(result.applied).toBe(1);
+      expect(localRows.get('tx-1')?.device_id).toBe('device-drifted');
+    });
+
+    it('should preserve all fields when merging conflict winner', () => {
+      const localRows = new Map<string, SyncableRow & { amount: number }>([
+        [
+          'tx-1',
+          {
+            id: 'tx-1',
+            updated_at: 1000,
+            is_deleted: false,
+            device_id: localDeviceId,
+            amount: 100,
+          },
+        ],
+      ]);
+
+      const remoteChanges: SyncChange<SyncableRow & { amount: number }>[] = [
+        {
+          table: 'transactions',
+          row: {
+            id: 'tx-1',
+            updated_at: 2000,
+            is_deleted: false,
+            device_id: 'device-remote',
+            amount: 200, // Different amount
+          },
+        },
+      ];
+
+      const result = mergeChanges(
+        localRows as Map<string, SyncableRow>,
+        remoteChanges as SyncChange<SyncableRow>[],
+        localDeviceId
+      );
+
+      expect(result.applied).toBe(1);
+      expect((localRows.get('tx-1') as { amount: number }).amount).toBe(200);
+    });
+  });
 });

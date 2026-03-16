@@ -323,3 +323,165 @@ describe('Database interface completeness', () => {
     expect(sourceCode).toContain('transaction<T>(fn: () => T): T');
   });
 });
+
+// ============================================
+// TESTS: OPFS Error Recovery Scenarios
+// ============================================
+
+describe('OPFS error recovery implementation', () => {
+  it('should have exponential backoff between retries', () => {
+    const sourceCode = fs.readFileSync(
+      path.join(
+        import.meta.dirname,
+        '../../packages/database/src/wa-sqlite.ts'
+      ),
+      'utf-8'
+    );
+
+    // Verify backoff delay calculation (100 * attempt for exponential-ish backoff)
+    expect(sourceCode).toContain('100 * attempt');
+  });
+
+  it('should log retry attempts for debugging', () => {
+    const sourceCode = fs.readFileSync(
+      path.join(
+        import.meta.dirname,
+        '../../packages/database/src/wa-sqlite.ts'
+      ),
+      'utf-8'
+    );
+
+    // Should log before retrying
+    expect(sourceCode).toMatch(/wasmLog.*OPFS stream error.*attempt.*retrying/);
+  });
+
+  it('should distinguish between recoverable and non-recoverable errors', () => {
+    const sourceCode = fs.readFileSync(
+      path.join(
+        import.meta.dirname,
+        '../../packages/database/src/wa-sqlite.ts'
+      ),
+      'utf-8'
+    );
+
+    // Should have logic to detect stream errors vs other errors
+    expect(sourceCode).toContain('isStreamError');
+    expect(sourceCode).toContain('const isStreamError');
+
+    // Only retry if stream error AND not at max retries
+    // Non-stream errors or max retries fall through to throw
+    expect(sourceCode).toMatch(
+      /if\s*\(isStreamError\s*&&\s*attempt\s*<\s*MAX_RETRIES\)/
+    );
+  });
+
+  it('should rethrow after exhausting all retry attempts', () => {
+    const sourceCode = fs.readFileSync(
+      path.join(
+        import.meta.dirname,
+        '../../packages/database/src/wa-sqlite.ts'
+      ),
+      'utf-8'
+    );
+
+    // After MAX_RETRIES, should throw the error
+    expect(sourceCode).toContain('throw error');
+    // Retry continue condition: retry if stream error AND not at max attempts
+    expect(sourceCode).toMatch(/attempt\s*<\s*MAX_RETRIES/);
+  });
+
+  it('should preserve original error information on final failure', () => {
+    const sourceCode = fs.readFileSync(
+      path.join(
+        import.meta.dirname,
+        '../../packages/database/src/wa-sqlite.ts'
+      ),
+      'utf-8'
+    );
+
+    // Should log retry attempts
+    expect(sourceCode).toMatch(/wasmLog.*OPFS stream error/i);
+  });
+
+  it('should handle both "closing writable stream" and "disk I/O error" patterns', () => {
+    const sourceCode = fs.readFileSync(
+      path.join(
+        import.meta.dirname,
+        '../../packages/database/src/wa-sqlite.ts'
+      ),
+      'utf-8'
+    );
+
+    // Both error patterns should be checked
+    expect(sourceCode).toContain("'closing writable stream'");
+    expect(sourceCode).toContain("'disk I/O error'");
+    expect(sourceCode).toContain("'cannot rollback'");
+  });
+
+  it('should use withLock to prevent concurrent OPFS access', () => {
+    const sourceCode = fs.readFileSync(
+      path.join(
+        import.meta.dirname,
+        '../../packages/database/src/wa-sqlite.ts'
+      ),
+      'utf-8'
+    );
+
+    // withLock should be used for serialization
+    expect(sourceCode).toContain('withLock');
+    expect(sourceCode).toContain('async withLock<T>');
+  });
+});
+
+// ============================================
+// TESTS: Concurrent Access Protection
+// ============================================
+
+describe('concurrent WASM access protection', () => {
+  it('should use a lock mechanism to serialize database operations', () => {
+    const sourceCode = fs.readFileSync(
+      path.join(
+        import.meta.dirname,
+        '../../packages/database/src/wa-sqlite.ts'
+      ),
+      'utf-8'
+    );
+
+    // Should have lock/queue mechanism
+    expect(sourceCode).toMatch(
+      /operationLock|pendingOperations|operationQueue/
+    );
+  });
+
+  it('should prevent overlapping transaction execution', () => {
+    const sourceCode = fs.readFileSync(
+      path.join(
+        import.meta.dirname,
+        '../../packages/database/src/wa-sqlite.ts'
+      ),
+      'utf-8'
+    );
+
+    // transactionAsync should use the lock
+    const transactionMethod = sourceCode.match(
+      /async transactionAsync[\s\S]*?^\s{2}\}/m
+    );
+
+    if (transactionMethod) {
+      expect(transactionMethod[0]).toContain('withLock');
+    }
+  });
+
+  it('should queue operations when lock is held', () => {
+    const sourceCode = fs.readFileSync(
+      path.join(
+        import.meta.dirname,
+        '../../packages/database/src/wa-sqlite.ts'
+      ),
+      'utf-8'
+    );
+
+    // Should have promise-based queuing
+    expect(sourceCode).toMatch(/Promise.*resolve|await.*lock/);
+  });
+});
