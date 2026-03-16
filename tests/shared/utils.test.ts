@@ -1,10 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import {
+  addDaysToDateOnly,
+  addMonthsToDateOnly,
+  diffDateOnlyInDays,
   formatCurrency,
   parseEuropeanNumber,
   formatDate,
   formatDateISO,
+  formatUTCDateISO,
   parseINGDate,
+  parseDateOnly,
   formatPercentage,
   getMonthName,
   generateTransactionHash,
@@ -99,6 +104,27 @@ describe('formatDateISO', () => {
     expect(result).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     // Should have today's components
     expect(result).toContain(String(today.getFullYear()));
+  });
+});
+
+describe('date-only helpers', () => {
+  it('parses date-only values without local timezone drift', () => {
+    const date = parseDateOnly('2025-03-01');
+
+    expect(formatUTCDateISO(date)).toBe('2025-03-01');
+    expect(date.toISOString()).toBe('2025-03-01T00:00:00.000Z');
+  });
+
+  it('adds calendar days using UTC date-only math', () => {
+    expect(addDaysToDateOnly('2025-03-01', 30)).toBe('2025-03-31');
+  });
+
+  it('adds calendar months using UTC date-only math', () => {
+    expect(addMonthsToDateOnly('2025-03-01', 1)).toBe('2025-04-01');
+  });
+
+  it('calculates day differences from date-only strings', () => {
+    expect(diffDateOnlyInDays('2025-03-01', '2025-03-31')).toBe(30);
   });
 });
 

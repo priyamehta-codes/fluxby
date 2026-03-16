@@ -1,3 +1,5 @@
+import { addMonthsToDateOnly } from './utils.js';
+
 export interface DemoRecurringPatternTemplate {
   merchantName: string;
   patternType: 'monthly' | 'weekly' | 'yearly' | string;
@@ -46,15 +48,12 @@ export function buildRecurringPatternFromTemplate(
     lastDateStr = latestTx.date;
     lastAmountVal = latestTx.amount;
   } else {
-    const lastDate = new Date(now);
-    lastDate.setDate(3);
-    lastDate.setMonth(lastDate.getMonth() - 1);
-    lastDateStr = lastDate.toISOString().split('T')[0];
+    const currentMonthDayThree = `${now.getFullYear()}-${String(
+      now.getMonth() + 1
+    ).padStart(2, '0')}-03`;
+    lastDateStr = addMonthsToDateOnly(currentMonthDayThree, -1);
     lastAmountVal = template.lastAmount;
   }
-
-  const nextDate = new Date(lastDateStr + 'T00:00:00Z');
-  nextDate.setMonth(nextDate.getMonth() + 1);
 
   return {
     merchantName: template.merchantName,
@@ -62,7 +61,7 @@ export function buildRecurringPatternFromTemplate(
     avgAmount: template.avgAmount,
     lastAmount: lastAmountVal,
     lastDate: lastDateStr,
-    nextExpectedDate: nextDate.toISOString().split('T')[0],
+    nextExpectedDate: addMonthsToDateOnly(lastDateStr, 1),
     isConfirmed: template.isConfirmed ? 1 : 0,
     isVariable: template.isVariable ? 1 : 0,
     transactionCount: template.transactionCount,

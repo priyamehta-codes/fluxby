@@ -325,23 +325,23 @@ describe('Next Expected Date Calculation', () => {
     lastDate: string,
     patternType: PatternType
   ): string {
-    const date = new Date(lastDate);
+    const date = new Date(`${lastDate}T00:00:00Z`);
 
     switch (patternType) {
       case 'weekly':
-        date.setDate(date.getDate() + 7);
+        date.setUTCDate(date.getUTCDate() + 7);
         break;
       case 'biweekly':
-        date.setDate(date.getDate() + 14);
+        date.setUTCDate(date.getUTCDate() + 14);
         break;
       case 'monthly':
-        date.setMonth(date.getMonth() + 1);
+        date.setUTCMonth(date.getUTCMonth() + 1);
         break;
       case 'quarterly':
-        date.setMonth(date.getMonth() + 3);
+        date.setUTCMonth(date.getUTCMonth() + 3);
         break;
       case 'yearly':
-        date.setFullYear(date.getFullYear() + 1);
+        date.setUTCFullYear(date.getUTCFullYear() + 1);
         break;
     }
 
@@ -367,9 +367,9 @@ describe('Next Expected Date Calculation', () => {
   });
 
   it('calculates next quarterly date', () => {
-    // Note: Jan 15 + 3 months = April 14 due to Feb having only 29 days in 2024
+    // UTC date math keeps this stable across local and CI timezones.
     expect(calculateNextExpectedDate('2024-01-15', 'quarterly')).toBe(
-      '2024-04-14'
+      '2024-04-15'
     );
   });
 

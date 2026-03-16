@@ -15,6 +15,10 @@ import {
   isSettingsCacheInitialized,
 } from '@fluxby/database';
 import {
+  addDaysToDateOnly,
+  addMonthsToDateOnly,
+  diffDateOnlyInDays,
+  formatDateISO,
   type Profile,
   type Transaction,
   type TransactionCreate,
@@ -4965,7 +4969,10 @@ export function createDataService(db: Database) {
       // Anything older than 12 months is ignored
       const twelveMonthsAgo = new Date();
       twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
-      const twelveMonthsAgoStr = twelveMonthsAgo.toISOString().split('T')[0];
+      const twelveMonthsAgoStr = addMonthsToDateOnly(
+        formatDateISO(new Date()),
+        -12
+      );
 
       // Get all expense transactions from the last 12 months
       // We'll do the grouping in-memory to handle multiple subscriptions per merchant
@@ -5035,7 +5042,7 @@ export function createDataService(db: Database) {
       interface AmountCluster {
         opposing_iban: string | null;
         merchant_name: string | null;
-        dates: Date[];
+        dates: string[];
         amounts: number[];
       }
 
@@ -5061,7 +5068,7 @@ export function createDataService(db: Database) {
               AMOUNT_CLUSTERING_THRESHOLD
             ) {
               // Add to existing cluster
-              cluster.dates.push(new Date(tx.date));
+              cluster.dates.push(tx.date);
               cluster.amounts.push(tx.amount);
               foundCluster = true;
               break;
@@ -5073,7 +5080,7 @@ export function createDataService(db: Database) {
             clusters.push({
               opposing_iban: opposing_iban === 'null' ? null : opposing_iban,
               merchant_name: merchant_name === 'null' ? null : merchant_name,
-              dates: [new Date(tx.date)],
+              dates: [tx.date],
               amounts: [tx.amount],
             });
           }
@@ -5087,7 +5094,7 @@ export function createDataService(db: Database) {
               date: d,
               amount: cluster.amounts[i],
             }));
-            pairs.sort((a, b) => a.date.getTime() - b.date.getTime());
+            pairs.sort((a, b) => a.date.localeCompare(b.date));
 
             cluster.dates = pairs.map((p) => p.date);
             cluster.amounts = pairs.map((p) => p.amount);
@@ -5167,10 +5174,7 @@ export function createDataService(db: Database) {
             // Check if transactions span at least 6 months (from first to last transaction)
             const firstDate = dates[0];
             const lastDateObj = dates[dates.length - 1];
-            const daySpan = Math.round(
-              (lastDateObj.getTime() - firstDate.getTime()) /
-                (1000 * 60 * 60 * 24)
-            );
+            const daySpan = diffDateOnlyInDays(firstDate, lastDateObj);
 
             // For monthly patterns, require at least 180 days span (6 months)
             // This ensures we have at least 6 payments over 6 months
@@ -5185,10 +5189,7 @@ export function createDataService(db: Database) {
             // Calculate intervals between consecutive transactions
             const intervals: number[] = [];
             for (let i = 1; i < dates.length; i++) {
-              const daysDiff = Math.round(
-                (dates[i].getTime() - dates[i - 1].getTime()) /
-                  (1000 * 60 * 60 * 24)
-              );
+              const daysDiff = diffDateOnlyInDays(dates[i - 1], dates[i]);
               intervals.push(daysDiff);
             }
 
@@ -5246,9 +5247,7 @@ export function createDataService(db: Database) {
             const avgAmount =
               amounts.reduce((sum, a) => sum + a, 0) / amounts.length;
             const lastAmount = amounts[amounts.length - 1];
-            const lastDate = dates[dates.length - 1]
-              .toISOString()
-              .split('T')[0];
+            const lastDate = dates[dates.length - 1];
 
             // Check if amount is variable (>10% variance) - use absolute values for comparison
             const absAvgAmount = Math.abs(avgAmount);
@@ -5259,11 +5258,10 @@ export function createDataService(db: Database) {
             );
 
             // Calculate next expected date
-            const nextExpected = new Date(dates[dates.length - 1]);
-            nextExpected.setDate(
-              nextExpected.getDate() + Math.round(avgInterval)
+            const nextExpectedDate = addDaysToDateOnly(
+              lastDate,
+              Math.round(avgInterval)
             );
-            const nextExpectedDate = nextExpected.toISOString().split('T')[0];
 
             // Look up existing patterns from pre-fetched map
             const merchantKey =
@@ -5400,7 +5398,10 @@ export function createDataService(db: Database) {
       // Calculate 12 months ago date for filtering
       const twelveMonthsAgo = new Date();
       twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
-      const twelveMonthsAgoStr = twelveMonthsAgo.toISOString().split('T')[0];
+      const twelveMonthsAgoStr = addMonthsToDateOnly(
+        formatDateISO(new Date()),
+        -12
+      );
 
       const rows = await db.queryAsync<{
         id: string;
@@ -5662,7 +5663,10 @@ export function createDataService(db: Database) {
       // Calculate 12 months ago date for filtering - matches getRecurringPatterns
       const twelveMonthsAgo = new Date();
       twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
-      const twelveMonthsAgoStr = twelveMonthsAgo.toISOString().split('T')[0];
+      const twelveMonthsAgoStr = addMonthsToDateOnly(
+        formatDateISO(new Date()),
+        -12
+      );
 
       const rows = await db.queryAsync<{
         id: string;
@@ -5720,20 +5724,20 @@ export function createDataService(db: Database) {
           yearly: 365,
         };
 
-        const start = new Date(startDate);
-        const end = new Date(endDate);
+        const start = startDate;
+        const end = endDate;
         let total = 0;
 
         for (const pattern of rows) {
           // Skip patterns with null avg_amount
           if (pattern.avg_amount === null) continue;
 
-          const nextDate = new Date(pattern.last_date);
+          let nextDate = pattern.last_date;
           const interval = intervalDays[pattern.pattern_type];
 
           // Project forward from last date
           while (nextDate <= end) {
-            nextDate.setDate(nextDate.getDate() + interval);
+            nextDate = addDaysToDateOnly(nextDate, interval);
 
             if (nextDate >= start && nextDate <= end) {
               total += Math.abs(pattern.avg_amount);
@@ -5767,7 +5771,10 @@ export function createDataService(db: Database) {
       // Calculate 12 months ago date for filtering
       const twelveMonthsAgo = new Date();
       twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
-      const twelveMonthsAgoStr = twelveMonthsAgo.toISOString().split('T')[0];
+      const twelveMonthsAgoStr = addMonthsToDateOnly(
+        formatDateISO(new Date()),
+        -12
+      );
 
       const patterns = await db.queryAsync<{
         id: string;
@@ -5785,8 +5792,8 @@ export function createDataService(db: Database) {
       );
 
       const entries: RecurringCalendarEntry[] = [];
-      const start = new Date(startDate);
-      const end = new Date(endDate);
+      const start = startDate;
+      const end = endDate;
 
       // Interval in days for each pattern type
       const intervalDays: Record<PatternType, number> = {
@@ -5798,17 +5805,17 @@ export function createDataService(db: Database) {
       };
 
       for (const pattern of patterns) {
-        const nextDate = new Date(pattern.last_date);
+        let nextDate = pattern.last_date;
         const interval = intervalDays[pattern.pattern_type];
 
         // Project forward from last date
         while (nextDate <= end) {
-          nextDate.setDate(nextDate.getDate() + interval);
+          nextDate = addDaysToDateOnly(nextDate, interval);
 
           if (nextDate >= start && nextDate <= end) {
             entries.push({
               id: pattern.id,
-              date: nextDate.toISOString().split('T')[0],
+              date: nextDate,
               merchantName: pattern.merchant_name,
               expectedAmount: pattern.avg_amount,
               patternType: pattern.pattern_type,
@@ -5819,9 +5826,7 @@ export function createDataService(db: Database) {
       }
 
       // Sort by date
-      entries.sort(
-        (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
-      );
+      entries.sort((a, b) => a.date.localeCompare(b.date));
 
       return entries;
     },

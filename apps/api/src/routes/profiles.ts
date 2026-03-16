@@ -1,6 +1,10 @@
 import { Router } from 'express';
 import { query, queryOne, run, runMany } from '../db/index.js';
-import type { Profile, ProfileType } from '@fluxby/shared';
+import {
+  buildRecurringPatternFromTemplate,
+  type Profile,
+  type ProfileType,
+} from '@fluxby/shared';
 import { SEED_CATEGORIES, flattenCategoriesForDB } from '../db/seed-data.js';
 import {
   validate,
@@ -1299,50 +1303,11 @@ router.post('/:id/seed-demo', (req, res) => {
         [profileId, `%${pattern.merchantName}%`, `%${pattern.merchantName}%`]
       );
 
-      // Build the recurring pattern object using shared helper
-      // Use shared helper exported from @fluxby/shared
-      // Local implementation of the helper to avoid runtime import issues
-      const buildHelper = function (
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        template: any,
-        latestTx?: { date: string; amount: number },
-        referenceDate?: Date
-      ) {
-        const now = referenceDate ? new Date(referenceDate) : new Date();
-
-        let lastDateStr: string;
-        let lastAmountVal: number;
-
-        if (latestTx && latestTx.date) {
-          lastDateStr = latestTx.date;
-          lastAmountVal = latestTx.amount;
-        } else {
-          const lastDate = new Date(now);
-          lastDate.setDate(3);
-          lastDate.setMonth(lastDate.getMonth() - 1);
-          lastDateStr = lastDate.toISOString().split('T')[0];
-          lastAmountVal = template.lastAmount;
-        }
-
-        const nextDate = new Date(lastDateStr + 'T00:00:00Z');
-        nextDate.setMonth(nextDate.getMonth() + 1);
-
-        return {
-          merchantName: template.merchantName,
-          patternType: template.patternType,
-          avgAmount: template.avgAmount,
-          lastAmount: lastAmountVal,
-          lastDate: lastDateStr,
-          nextExpectedDate: nextDate.toISOString().split('T')[0],
-          isConfirmed: template.isConfirmed ? 1 : 0,
-          isVariable: template.isVariable ? 1 : 0,
-          transactionCount: template.transactionCount,
-        };
-      };
-
-      const built = buildHelper(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        pattern as any,
+      const built = buildRecurringPatternFromTemplate(
+        {
+          ...pattern,
+          isVariable: pattern.isVariable ?? false,
+        },
         txRow || undefined,
         patternDate
       );

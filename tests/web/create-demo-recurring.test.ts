@@ -40,4 +40,41 @@ describe('web createDemoData recurring patterns', () => {
     expect(lastAmount).toBe(-13.5);
     expect(lastDate).toBe('2025-12-10');
   });
+
+  it('keeps next expected date stable for monthly date-only recurring patterns', async () => {
+    const inserts: Array<{ sql: string; params: any[] }> = [];
+
+    const fakeDb: any = {
+      queryOneAsync: async (sql: string, params: any[]) => {
+        if (params[1] && (params[1] as string).includes('Netflix')) {
+          return { date: '2025-03-01', amount: -12.99 };
+        }
+        return null;
+      },
+      runAsync: async (sql: string, params: any[]) => {
+        inserts.push({ sql, params });
+        return { lastInsertRowid: 1 };
+      },
+    };
+
+    await insertDemoRecurringPatterns(
+      fakeDb,
+      'demo-profile',
+      new Date('2025-03-15')
+    );
+
+    const netflixInsert = inserts.find(
+      (insert) =>
+        insert.sql.includes('INSERT INTO recurring_patterns') &&
+        insert.params[2] === 'Netflix'
+    );
+
+    expect(netflixInsert).toBeDefined();
+    if (!netflixInsert) {
+      throw new Error('No Netflix recurring_patterns insert captured');
+    }
+
+    expect(netflixInsert.params[6]).toBe('2025-03-01');
+    expect(netflixInsert.params[7]).toBe('2025-04-01');
+  });
 });

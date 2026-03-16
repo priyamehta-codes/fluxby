@@ -1,10 +1,12 @@
 import { Router } from 'express';
 import { query, queryOne, run } from '../db/index.js';
 import {
+  addDaysToDateOnly,
   type RecurringPattern,
   type RecurringCalendarEntry,
   type RecurringStats,
   type PatternType,
+  diffDateOnlyInDays,
   PATTERN_INTERVALS,
   MIN_TRANSACTIONS_FOR_PATTERN,
   AMOUNT_VARIANCE_THRESHOLD,
@@ -230,8 +232,8 @@ router.get('/calendar', (req, res) => {
     );
 
     const entries: RecurringCalendarEntry[] = [];
-    const start = new Date(startDate as string);
-    const end = new Date(endDate as string);
+    const start = String(startDate);
+    const end = String(endDate);
 
     // Interval in days for each pattern type
     const intervalDays: Record<PatternType, number> = {
@@ -243,17 +245,17 @@ router.get('/calendar', (req, res) => {
     };
 
     for (const pattern of patterns) {
-      const nextDate = new Date(pattern.last_date);
+      let nextDate = pattern.last_date;
       const interval = intervalDays[pattern.pattern_type];
 
       // Project forward from last date
       while (nextDate <= end) {
-        nextDate.setDate(nextDate.getDate() + interval);
+        nextDate = addDaysToDateOnly(nextDate, interval);
 
         if (nextDate >= start && nextDate <= end) {
           entries.push({
             id: pattern.id,
-            date: nextDate.toISOString().split('T')[0],
+            date: nextDate,
             merchantName: pattern.merchant_name,
             expectedAmount: pattern.avg_amount,
             patternType: pattern.pattern_type,
@@ -264,9 +266,7 @@ router.get('/calendar', (req, res) => {
     }
 
     // Sort by date
-    entries.sort(
-      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
-    );
+    entries.sort((a, b) => a.date.localeCompare(b.date));
 
     res.json({ success: true, data: entries });
   } catch (error) {
@@ -396,7 +396,7 @@ router.post('/detect', (req, res) => {
     interface AmountCluster {
       opposing_iban: string | null;
       merchant_name: string | null;
-      dates: Date[];
+      dates: string[];
       amounts: number[];
     }
 
@@ -422,7 +422,7 @@ router.post('/detect', (req, res) => {
             AMOUNT_CLUSTERING_THRESHOLD
           ) {
             // Add to existing cluster
-            cluster.dates.push(new Date(tx.date));
+            cluster.dates.push(tx.date);
             cluster.amounts.push(tx.amount);
             foundCluster = true;
             break;
@@ -434,7 +434,7 @@ router.post('/detect', (req, res) => {
           clusters.push({
             opposing_iban: opposing_iban === 'null' ? null : opposing_iban,
             merchant_name: merchant_name === 'null' ? null : merchant_name,
-            dates: [new Date(tx.date)],
+            dates: [tx.date],
             amounts: [tx.amount],
           });
         }
@@ -448,7 +448,7 @@ router.post('/detect', (req, res) => {
             date: d,
             amount: cluster.amounts[i],
           }));
-          pairs.sort((a, b) => a.date.getTime() - b.date.getTime());
+          pairs.sort((a, b) => a.date.localeCompare(b.date));
 
           cluster.dates = pairs.map((p) => p.date);
           cluster.amounts = pairs.map((p) => p.amount);
@@ -470,9 +470,7 @@ router.post('/detect', (req, res) => {
       // Check if transactions span at least 6 months (from first to last transaction)
       const firstDate = dates[0];
       const lastDateObj = dates[dates.length - 1];
-      const daySpan = Math.round(
-        (lastDateObj.getTime() - firstDate.getTime()) / (1000 * 60 * 60 * 24)
-      );
+      const daySpan = diffDateOnlyInDays(firstDate, lastDateObj);
 
       // For monthly patterns, require at least 180 days span (6 months)
       if (daySpan < MIN_MONTHS_SPAN_DAYS) continue;
@@ -480,9 +478,7 @@ router.post('/detect', (req, res) => {
       // Calculate intervals between consecutive transactions
       const intervals: number[] = [];
       for (let i = 1; i < dates.length; i++) {
-        const daysDiff = Math.round(
-          (dates[i].getTime() - dates[i - 1].getTime()) / (1000 * 60 * 60 * 24)
-        );
+        const daysDiff = diffDateOnlyInDays(dates[i - 1], dates[i]);
         intervals.push(daysDiff);
       }
 
@@ -514,7 +510,7 @@ router.post('/detect', (req, res) => {
       // Calculate amount statistics
       const avgAmount = amounts.reduce((sum, a) => sum + a, 0) / amounts.length;
       const lastAmount = amounts[amounts.length - 1];
-      const lastDate = dates[dates.length - 1].toISOString().split('T')[0];
+      const lastDate = dates[dates.length - 1];
 
       // Check if amount is variable (>10% variance) - use absolute values for comparison
       const absAvgAmount = Math.abs(avgAmount);
@@ -525,9 +521,10 @@ router.post('/detect', (req, res) => {
       );
 
       // Calculate next expected date
-      const nextExpected = new Date(dates[dates.length - 1]);
-      nextExpected.setDate(nextExpected.getDate() + Math.round(avgInterval));
-      const nextExpectedDate = nextExpected.toISOString().split('T')[0];
+      const nextExpectedDate = addDaysToDateOnly(
+        lastDate,
+        Math.round(avgInterval)
+      );
 
       // Check if pattern already exists (including dismissed ones to avoid re-creating)
       // Match by merchant + similar amount (within 20%) with flexible IBAN matching

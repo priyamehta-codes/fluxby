@@ -25,11 +25,14 @@ export function parseEuropeanNumber(value: string | undefined | null): number {
  * Format a date as DD-MM-YYYY (European format)
  */
 export function formatDate(date: Date | string): string {
-  const d = typeof date === 'string' ? new Date(date) : date;
+  const isDateOnlyString =
+    typeof date === 'string' && DATE_ONLY_REGEX.test(date);
+  const d = typeof date === 'string' ? parseFlexibleDate(date) : date;
   return new Intl.DateTimeFormat('nl-NL', {
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
+    ...(isDateOnlyString ? { timeZone: 'UTC' } : {}),
   }).format(d);
 }
 
@@ -38,11 +41,73 @@ export function formatDate(date: Date | string): string {
  * Uses local timezone to avoid date shifts when converting to UTC
  */
 export function formatDateISO(date: Date | string): string {
-  const d = typeof date === 'string' ? new Date(date) : date;
+  if (typeof date === 'string' && DATE_ONLY_REGEX.test(date)) {
+    return formatUTCDateISO(parseDateOnly(date));
+  }
+
+  const d = typeof date === 'string' ? parseFlexibleDate(date) : date;
   const year = d.getFullYear();
   const month = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+
+const DATE_ONLY_REGEX = /^(\d{4})-(\d{2})-(\d{2})$/;
+const MS_PER_DAY = 1000 * 60 * 60 * 24;
+
+function parseFlexibleDate(value: string): Date {
+  return DATE_ONLY_REGEX.test(value) ? parseDateOnly(value) : new Date(value);
+}
+
+/**
+ * Parse a date-only string as a UTC calendar date.
+ */
+export function parseDateOnly(date: string): Date {
+  const match = DATE_ONLY_REGEX.exec(date);
+  if (!match) {
+    throw new Error(`Invalid date-only value: ${date}`);
+  }
+
+  const [, year, month, day] = match;
+  return new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+}
+
+/**
+ * Format a UTC date as YYYY-MM-DD without applying local timezone shifts.
+ */
+export function formatUTCDateISO(date: Date): string {
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Add days to a date-only string using UTC calendar math.
+ */
+export function addDaysToDateOnly(date: string, days: number): string {
+  const next = parseDateOnly(date);
+  next.setUTCDate(next.getUTCDate() + days);
+  return formatUTCDateISO(next);
+}
+
+/**
+ * Add months to a date-only string using UTC calendar math.
+ */
+export function addMonthsToDateOnly(date: string, months: number): string {
+  const next = parseDateOnly(date);
+  next.setUTCMonth(next.getUTCMonth() + months);
+  return formatUTCDateISO(next);
+}
+
+/**
+ * Calculate the day difference between two date-only strings.
+ */
+export function diffDateOnlyInDays(startDate: string, endDate: string): number {
+  return Math.round(
+    (parseDateOnly(endDate).getTime() - parseDateOnly(startDate).getTime()) /
+      MS_PER_DAY
+  );
 }
 
 /**
@@ -69,9 +134,12 @@ export function getMonthName(
   date: Date | string,
   short: boolean = false
 ): string {
-  const d = typeof date === 'string' ? new Date(date) : date;
+  const isDateOnlyString =
+    typeof date === 'string' && DATE_ONLY_REGEX.test(date);
+  const d = typeof date === 'string' ? parseFlexibleDate(date) : date;
   return new Intl.DateTimeFormat('en-US', {
     month: short ? 'short' : 'long',
+    ...(isDateOnlyString ? { timeZone: 'UTC' } : {}),
   }).format(d);
 }
 

@@ -37,4 +37,17 @@ describe('buildRecurringPatternFromTemplate', () => {
     // nextExpectedDate should be 2025-12-03
     expect(out.nextExpectedDate).toBe('2025-12-03');
   });
+
+  it('keeps monthly next expected date stable for date-only values', () => {
+    const latestTx = { date: '2025-03-01', amount: -12.99 };
+
+    const out = buildRecurringPatternFromTemplate(
+      template,
+      latestTx,
+      new Date('2025-03-15')
+    );
+
+    expect(out.lastDate).toBe('2025-03-01');
+    expect(out.nextExpectedDate).toBe('2025-04-01');
+  });
 });
