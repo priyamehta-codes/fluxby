@@ -566,7 +566,7 @@ export default function Analytics() {
                                 </p>
                                 {payload.map((entry) => (
                                   <p
-                                    key={entry.dataKey}
+                                    key={entry.dataKey as string}
                                     className='text-sm'
                                     style={{ color: entry.color }}
                                   >
@@ -771,8 +771,8 @@ export default function Analytics() {
                         ))}
                       </Pie>
                       <Tooltip
-                        formatter={(value: number | undefined) => (
-                          <Currency amount={value || 0} />
+                        formatter={(value) => (
+                          <Currency amount={typeof value === 'number' ? value : 0} />
                         )}
                         contentStyle={{
                           backgroundColor: 'hsl(var(--card))',
@@ -958,8 +958,8 @@ export default function Analytics() {
                         ))}
                       </Pie>
                       <Tooltip
-                        formatter={(value: number | undefined) => (
-                          <Currency amount={value || 0} />
+                        formatter={(value) => (
+                          <Currency amount={typeof value === 'number' ? value : 0} />
                         )}
                         contentStyle={{
                           backgroundColor: 'hsl(var(--card))',

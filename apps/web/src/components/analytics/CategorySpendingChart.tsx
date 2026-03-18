@@ -191,11 +191,11 @@ export function CategorySpendingChart({
                         </p>
                         {payload.map((entry) => (
                           <p
-                            key={entry.dataKey}
+                            key={entry.dataKey as string}
                             className='text-sm'
                             style={{ color: entry.color }}
                           >
-                            {entry.dataKey}:{' '}
+                            {entry.dataKey as string}:{' '}
                             <Currency amount={entry.value as number} />
                           </p>
                         ))}
