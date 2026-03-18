@@ -122,4 +122,4 @@ jobs:
 
       - name: Build Tauri app (debug)
         working-directory: apps/tauri
-        run: npx tauri build --debug --bundles none
+        run: npx tauri build --debug --bundles app
