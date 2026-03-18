@@ -67,7 +67,7 @@ jobs:
               - 'apps/tauri/**'
               - 'apps/web/**'
               - 'packages/**'
-              - '.github/workflows/tauri-*.yml'
+              - '.github/workflows/fluxby-release.yml'
               - '.github/workflows/fluxby-pr-check.yml'
 
   # Tauri build check - only for relevant paths
@@ -92,7 +92,9 @@ jobs:
           cache: 'npm'
 
       - name: Install Rust stable
-        uses: dtolnay/rust-action@stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
 
       - name: Install Linux dependencies
         if: matrix.platform == 'ubuntu-22.04'
