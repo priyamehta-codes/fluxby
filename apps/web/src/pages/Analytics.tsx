@@ -772,7 +772,9 @@ export default function Analytics() {
                       </Pie>
                       <Tooltip
                         formatter={(value) => (
-                          <Currency amount={typeof value === 'number' ? value : 0} />
+                          <Currency
+                            amount={typeof value === 'number' ? value : 0}
+                          />
                         )}
                         contentStyle={{
                           backgroundColor: 'hsl(var(--card))',
@@ -959,7 +961,9 @@ export default function Analytics() {
                       </Pie>
                       <Tooltip
                         formatter={(value) => (
-                          <Currency amount={typeof value === 'number' ? value : 0} />
+                          <Currency
+                            amount={typeof value === 'number' ? value : 0}
+                          />
                         )}
                         contentStyle={{
                           backgroundColor: 'hsl(var(--card))',
