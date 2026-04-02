@@ -189,7 +189,7 @@ export function CategorySpendingChart({
                         <p className='mb-1 text-sm font-medium'>
                           {monthName} {year}
                         </p>
-                        {payload.map((entry) => (
+                        {payload.slice().reverse().map((entry) => (
                           <p
                             key={entry.dataKey as string}
                             className='text-sm'
