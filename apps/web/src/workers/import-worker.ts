@@ -181,6 +181,9 @@ function parseFlexibleAmount(value: string): number | null {
 let aborted = false;
 
 self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
+  // Validate message structure (CodeQL js/missing-origin-check)
+  if (!event.data || typeof event.data.type !== 'string') return;
+
   const { type, payload } = event.data;
 
   if (type === 'abort') {

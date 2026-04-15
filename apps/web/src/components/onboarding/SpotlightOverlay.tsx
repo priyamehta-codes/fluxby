@@ -133,10 +133,7 @@ export function SpotlightOverlay({
   // Use SVG mask for the dark overlay to support rounded corners in the cutout
   return (
     <div
-      className={cn(
-        'fixed inset-0 z-[9998] transition-opacity',
-        isVisible ? 'opacity-100' : 'pointer-events-none opacity-0'
-      )}
+      className={cn('fixed inset-0 z-[9998] opacity-100 transition-opacity')}
       style={{
         transitionDuration: `${transitionDuration}ms`,
       }}

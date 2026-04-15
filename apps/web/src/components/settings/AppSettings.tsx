@@ -297,12 +297,6 @@ export function AppSettings() {
         handleControllerChange
       );
     };
-    return () => {
-      navigator.serviceWorker.removeEventListener(
-        'controllerchange',
-        handleControllerChange
-      );
-    };
   }, [t]);
 
   const updateStatusRef = useRef(updateStatus);

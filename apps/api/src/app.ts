@@ -76,8 +76,10 @@ app.use((req, res, next) => {
   res.on('finish', () => {
     const duration = Date.now() - start;
     if (duration > 500) {
+      // Sanitize log output to prevent log injection (CodeQL js/log-injection)
+      const safeUrl = req.originalUrl.replace(/[\r\n]/g, '');
       console.warn(
-        `[PERF] Slow API Request: ${req.method} ${req.originalUrl} (${duration}ms)`
+        `[PERF] Slow API Request: ${req.method} ${safeUrl} (${duration}ms)`
       );
     }
   });

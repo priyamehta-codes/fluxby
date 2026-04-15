@@ -440,7 +440,7 @@ describe('useBulkDelete hook logic', () => {
       };
 
       const timeRemaining = payload.expiresAt - Date.now();
-      const canUndo = !!payload && timeRemaining > 0;
+      const canUndo = timeRemaining > 0;
 
       expect(canUndo).toBe(true);
     });
@@ -454,7 +454,7 @@ describe('useBulkDelete hook logic', () => {
       };
 
       const timeRemaining = Math.max(0, payload.expiresAt - Date.now());
-      const canUndo = !!payload && timeRemaining > 0;
+      const canUndo = timeRemaining > 0;
 
       expect(canUndo).toBe(false);
     });
@@ -1042,9 +1042,10 @@ describe('Concurrency Edge Cases', () => {
 
     // Wait slightly then check
     const retrieved = getUndoPayload();
-    // Might be null or might exist depending on timing
-    // This tests the boundary condition handling
-    expect(retrieved === null || retrieved !== null).toBe(true);
+    // Boundary condition: retrieved may or may not have expired
+    if (retrieved !== null) {
+      expect(retrieved.transactionIds).toEqual(['id-1']);
+    }
   });
 
   it('handles multiple affected accounts in single delete', () => {

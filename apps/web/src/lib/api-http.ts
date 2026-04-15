@@ -46,7 +46,9 @@ function buildApiUrl(endpoint: string): string {
   const configuredBase = getApiBaseUrl();
   if (!configuredBase) return `/api${endpoint}`;
 
-  const base = configuredBase.replace(/\/+$/, '');
+  // Strip trailing slashes without regex to avoid ReDoS (CodeQL js/polynomial-redos)
+  let base = configuredBase;
+  while (base.endsWith('/')) base = base.slice(0, -1);
   // Allow users to paste either 'http://host:3001' or 'http://host:3001/api'
   if (base.endsWith('/api')) return `${base}${endpoint}`;
   return `${base}/api${endpoint}`;

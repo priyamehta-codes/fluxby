@@ -189,16 +189,19 @@ export function CategorySpendingChart({
                         <p className='mb-1 text-sm font-medium'>
                           {monthName} {year}
                         </p>
-                        {payload.slice().reverse().map((entry) => (
-                          <p
-                            key={entry.dataKey as string}
-                            className='text-sm'
-                            style={{ color: entry.color }}
-                          >
-                            {entry.dataKey as string}:{' '}
-                            <Currency amount={entry.value as number} />
-                          </p>
-                        ))}
+                        {payload
+                          .slice()
+                          .reverse()
+                          .map((entry) => (
+                            <p
+                              key={entry.dataKey as string}
+                              className='text-sm'
+                              style={{ color: entry.color }}
+                            >
+                              {entry.dataKey as string}:{' '}
+                              <Currency amount={entry.value as number} />
+                            </p>
+                          ))}
                         <p className='mt-1 border-t pt-1 text-sm font-semibold'>
                           {t.analytics?.total || 'Total'}:{' '}
                           <Currency amount={total} />

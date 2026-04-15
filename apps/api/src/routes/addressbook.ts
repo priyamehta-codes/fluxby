@@ -32,7 +32,9 @@ function safeRegexReplace(
 
   // Validate pattern safety
   if (!isRegexSafe(pattern)) {
-    console.warn(`Unsafe regex pattern blocked: ${pattern}`);
+    console.warn(
+      `Unsafe regex pattern blocked: ${pattern.replace(/[\r\n]/g, '')}`
+    );
     return input;
   }
 

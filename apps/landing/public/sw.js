@@ -137,6 +137,9 @@ self.addEventListener('fetch', (event) => {
 
 // Handle messages from the main thread
 self.addEventListener('message', (event) => {
+  // Only accept messages from same origin (CodeQL js/missing-origin-check)
+  if (event.origin && event.origin !== self.location.origin) return;
+
   if (event.data === 'skipWaiting') {
     self.skipWaiting();
   }

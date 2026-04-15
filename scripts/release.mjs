@@ -25,7 +25,7 @@
  */
 
 import { execSync } from 'child_process';
-import { readFileSync, writeFileSync, existsSync } from 'fs';
+import { readFileSync, writeFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import readline from 'readline';
@@ -1238,6 +1238,11 @@ async function main() {
   const bump = determineVersionBump(commits);
   const newVersion = forceVersion || calculateNewVersion(currentVersion, bump);
 
+  // Validate version format to prevent command injection (CodeQL js/indirect-command-line-injection)
+  if (!/^\d+\.\d+\.\d+(-[\w.]+)?$/.test(newVersion)) {
+    throw new Error(`Invalid version format: ${newVersion}`);
+  }
+
   log(`Current version: ${currentVersion}`, 'cyan');
   log(`Version bump: ${bump}`, 'cyan');
   log(`New version: ${newVersion}`, 'green');
@@ -1349,10 +1354,12 @@ async function main() {
     logStep('8/9', 'Writing CHANGELOG.md...');
     const changelogPath = join(ROOT_DIR, 'CHANGELOG.md');
     let existingChangelog = '';
-    if (existsSync(changelogPath)) {
+    try {
       existingChangelog = readFileSync(changelogPath, 'utf-8');
       // Remove header if present
       existingChangelog = existingChangelog.replace(/^# Changelog\n+/, '');
+    } catch {
+      // File does not exist yet – start fresh
     }
     writeFileSync(
       changelogPath,
