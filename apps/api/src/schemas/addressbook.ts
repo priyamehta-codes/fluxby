@@ -93,6 +93,14 @@ export const addIbanToContactSchema = z.object({
 });
 
 /**
+ * Lookup address book entry by IBAN
+ * POST /api/addressbook/by-iban
+ */
+export const lookupByIbanSchema = z.object({
+  iban: ibanSchema,
+});
+
+/**
  * Cleanup rule schema
  * POST /api/addressbook/cleanup-rules
  */

@@ -614,7 +614,10 @@ export const api = {
   getAddressBookEntry: (id: number) => fetchAPI(`/addressbook/${id}`),
 
   getAddressBookByIban: (iban: string) =>
-    fetchAPI(`/addressbook/by-iban/${encodeURIComponent(iban)}`),
+    fetchAPI('/addressbook/by-iban', {
+      method: 'POST',
+      body: JSON.stringify({ iban }),
+    }),
 
   createAddressBookEntry: (data: {
     iban: string;

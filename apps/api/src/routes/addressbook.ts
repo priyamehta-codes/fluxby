@@ -12,6 +12,7 @@ import {
   createPaymentProviderSchema,
   createPaymentProviderRuleSchema,
   updatePaymentProviderRuleSchema,
+  lookupByIbanSchema,
 } from '../middleware/validation.js';
 import { isRegexSafe, escapeRegex } from '../utils/index.js';
 
@@ -2105,25 +2106,33 @@ router.get('/:id', (req, res) => {
 
 /**
  * @swagger
- * /api/addressbook/by-iban/{iban}:
- *   get:
+ * /api/addressbook/by-iban:
+ *   post:
  *     summary: Haal adresboek entry op via IBAN
+ *     description: >
+ *       Uses POST to avoid exposing sensitive IBAN in URL path/query
+ *       (CodeQL js/sensitive-get-query).
  *     tags: [AddressBook]
- *     parameters:
- *       - in: path
- *         name: iban
- *         required: true
- *         schema:
- *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - iban
+ *             properties:
+ *               iban:
+ *                 type: string
  *     responses:
  *       200:
  *         description: Adresboek entry details
  *       404:
  *         description: Entry niet gevonden
  */
-router.get('/by-iban/:iban', (req, res) => {
+router.post('/by-iban', validate(lookupByIbanSchema), (req, res) => {
   try {
-    const iban = req.params.iban.toUpperCase().trim();
+    const iban = (req.body.iban as string).toUpperCase().trim();
     const profileId = getEffectiveProfileId(req);
     const row = queryOne<DBAddressBookEntry>(
       'SELECT * FROM address_book WHERE iban = ? AND profile_id = ?',
