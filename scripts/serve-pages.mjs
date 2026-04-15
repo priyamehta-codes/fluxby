@@ -85,7 +85,9 @@ const server = http.createServer((req, res) => {
       const stats = statSync(resolved);
       if (stats.isDirectory()) {
         if (!requestPath.endsWith('/')) {
-          res.writeHead(301, { Location: `${requestPath}/` });
+          // Use the path relative to siteDir for safe redirect (avoid open redirect)
+          const safePath = '/' + path.relative(siteDir, resolved);
+          res.writeHead(301, { Location: `${safePath}/` });
           res.end();
           return;
         }

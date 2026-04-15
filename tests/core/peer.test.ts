@@ -70,7 +70,7 @@ describe('ICE Server Configuration', () => {
     it('includes Google STUN servers', () => {
       const servers = getDefaultStunServers();
       const googleServers = servers.filter((s) =>
-        String(s.urls).includes('google.com')
+        /\.google\.com(:|$)/.test(String(s.urls))
       );
       expect(googleServers.length).toBeGreaterThan(0);
     });

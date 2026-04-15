@@ -373,19 +373,13 @@ export const PaymentProcessorBadge = memo(function PaymentProcessorBadge({
         <div className='max-h-48 space-y-1 overflow-y-auto'>
           {/* Option to clear */}
           <button
-            className={cn(
-              'flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm transition-colors hover:bg-muted',
-              !paymentProvider && 'bg-muted'
-            )}
+            className='flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm transition-colors hover:bg-muted'
             onClick={() => handleSelect(null)}
           >
             <span className='flex h-6 w-6 flex-shrink-0 items-center justify-center rounded bg-gray-100 text-gray-500'>
               <X className='h-3.5 w-3.5' />
             </span>
             <span className='truncate'>{t.remove}</span>
-            {!paymentProvider && (
-              <Check className='ml-auto h-3 w-3 text-primary' />
-            )}
           </button>
           {/* List available processors */}
           {processors.map((rule) => (

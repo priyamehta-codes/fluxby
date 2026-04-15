@@ -705,11 +705,12 @@ export const api = {
 
   // Shared IBAN merchants
   getSharedIbanMerchants: (iban?: string) =>
-    fetchAPI(
-      iban
-        ? `/addressbook/shared-iban-merchants?iban=${encodeURIComponent(iban)}`
-        : '/addressbook/shared-iban-merchants'
-    ),
+    iban
+      ? fetchAPI('/addressbook/shared-iban-merchants/search', {
+          method: 'POST',
+          body: JSON.stringify({ iban }),
+        })
+      : fetchAPI('/addressbook/shared-iban-merchants'),
 
   addSharedIbanMerchants: (
     iban: string,

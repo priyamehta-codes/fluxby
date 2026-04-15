@@ -326,8 +326,9 @@ export function DatabaseProvider({ children }: DatabaseProviderProps) {
 
   // Safety check: if not loading, no error, but also not ready, something went wrong
   // EXCEPT if we're waiting for password unlock - that's a valid state where db is null
+  // Note: isLoading and error are already handled by early returns above
   const isWaitingForUnlock = isEncryptionEnabled && !isUnlocked;
-  if (!isLoading && !error && !isReady && !db && !isWaitingForUnlock) {
+  if (!isReady && !db && !isWaitingForUnlock) {
     devLog('WARNING: Database initialization completed but db is null');
     return (
       <DatabaseErrorScreen

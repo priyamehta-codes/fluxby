@@ -988,10 +988,10 @@ ${featuresCode}
 }
 
 /**
- * Escape single quotes in strings for JavaScript
+ * Escape single quotes and backslashes in strings for JavaScript string literals
  */
 function escapeString(str) {
-  return str.replace(/'/g, "\\'");
+  return str.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 }
 
 /**

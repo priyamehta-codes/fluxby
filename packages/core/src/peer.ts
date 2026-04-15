@@ -239,7 +239,7 @@ export class PeerSync {
   private pendingPairingCode: string | null = null;
   private isInitialized = false;
   // Track session ID to ensure unique peer IDs across page refreshes
-  private sessionId: string = Math.random().toString(36).substring(2, 8);
+  private sessionId: string = crypto.randomUUID().slice(0, 8);
 
   constructor(options: PeerOptions) {
     this.options = options;

@@ -494,7 +494,7 @@ export function OnboardingModal({
       {/* Spotlight Overlay */}
       <SpotlightOverlay
         targetSelector={currentStep.selector}
-        isActive={isActive && modalState === 'normal'}
+        isActive={modalState === 'normal'}
         padding={12}
         borderRadius={12}
         transitionDuration={transitionDuration}

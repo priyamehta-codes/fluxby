@@ -30,7 +30,7 @@ function safeRegexReplace(
   // Validate flags - only allow safe flags
   const safeFlags = flags.replace(/[^gimsuy]/g, '') || 'gi';
 
-  // Validate pattern safety
+  // Validate pattern safety (blocks nested quantifiers, backreferences, etc.)
   if (!isRegexSafe(pattern)) {
     console.warn(
       `Unsafe regex pattern blocked: ${pattern.replace(/[\r\n]/g, '')}`
@@ -39,7 +39,14 @@ function safeRegexReplace(
   }
 
   try {
-    const regex = new RegExp(pattern, safeFlags);
+    // Pre-validate by compiling the pattern in a try-catch
+    // to reject any syntactically invalid expressions
+    let regex: RegExp;
+    try {
+      regex = new RegExp(pattern, safeFlags);
+    } catch {
+      return input;
+    }
     // Limit input length for regex operations
     if (input.length > 1000) {
       return input;
@@ -1129,43 +1136,20 @@ router.post('/detect-shared', (req, res) => {
  *   get:
  *     summary: Haal alle merchant mappings op voor gedeelde IBANs
  *     tags: [AddressBook]
- *     parameters:
- *       - in: query
- *         name: iban
- *         schema:
- *           type: string
- *         description: Filter op specifieke IBAN
  *     responses:
  *       200:
  *         description: Lijst van merchant mappings
  */
 router.get('/shared-iban-merchants', (req, res) => {
   try {
-    const iban = req.query.iban as string | undefined;
-
-    let merchants;
-    if (iban) {
-      merchants = query<{
-        id: number;
-        iban: string;
-        original_name: string;
-        display_name: string;
-        notes: string | null;
-        created_at: string;
-      }>(
-        'SELECT * FROM shared_iban_merchants WHERE iban = ? ORDER BY display_name',
-        [iban]
-      );
-    } else {
-      merchants = query<{
-        id: number;
-        iban: string;
-        original_name: string;
-        display_name: string;
-        notes: string | null;
-        created_at: string;
-      }>('SELECT * FROM shared_iban_merchants ORDER BY iban, display_name');
-    }
+    const merchants = query<{
+      id: number;
+      iban: string;
+      original_name: string;
+      display_name: string;
+      notes: string | null;
+      created_at: string;
+    }>('SELECT * FROM shared_iban_merchants ORDER BY iban, display_name');
 
     res.json({
       success: true,
@@ -1183,6 +1167,68 @@ router.get('/shared-iban-merchants', (req, res) => {
     res
       .status(500)
       .json({ success: false, error: 'Failed to fetch shared IBAN merchants' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/addressbook/shared-iban-merchants/search:
+ *   post:
+ *     summary: Zoek merchant mappings voor een specifieke IBAN
+ *     tags: [AddressBook]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - iban
+ *             properties:
+ *               iban:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Lijst van merchant mappings voor de opgegeven IBAN
+ */
+router.post('/shared-iban-merchants/search', (req, res) => {
+  try {
+    const { iban } = req.body as { iban?: string };
+    if (!iban || typeof iban !== 'string') {
+      return res
+        .status(400)
+        .json({ success: false, error: 'IBAN is required' });
+    }
+
+    const merchants = query<{
+      id: number;
+      iban: string;
+      original_name: string;
+      display_name: string;
+      notes: string | null;
+      created_at: string;
+    }>(
+      'SELECT * FROM shared_iban_merchants WHERE iban = ? ORDER BY display_name',
+      [iban]
+    );
+
+    res.json({
+      success: true,
+      data: merchants.map((m) => ({
+        id: m.id,
+        iban: m.iban,
+        originalName: m.original_name,
+        displayName: m.display_name,
+        notes: m.notes,
+        createdAt: m.created_at,
+      })),
+    });
+  } catch (error) {
+    console.error('Error searching shared IBAN merchants:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to search shared IBAN merchants',
+    });
   }
 });
 
@@ -1410,7 +1456,7 @@ router.post('/resolve-shared', (req, res) => {
           [addressBookId, iban]
         );
         // Update name if requested (usually we keep existing name but user might have typed a new one)
-        if (name && name !== contact.name) {
+        if (name !== contact.name) {
           run('UPDATE address_book SET name = ? WHERE id = ?', [
             name,
             addressBookId,

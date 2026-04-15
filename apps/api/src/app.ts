@@ -96,7 +96,7 @@ try {
 
   if (shouldServeWeb && existsSync(webDistDir) && existsSync(webIndexFile)) {
     app.use(express.static(webDistDir));
-    app.get('*', (req, res, next) => {
+    app.get('*', globalRateLimiter, (req, res, next) => {
       if (req.path.startsWith('/api')) return next();
       res.sendFile(webIndexFile);
     });

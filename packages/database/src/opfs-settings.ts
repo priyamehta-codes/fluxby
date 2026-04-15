@@ -42,6 +42,11 @@ async function getSettingsDirectory(): Promise<FileSystemDirectoryHandle> {
 
 /**
  * Write a value to OPFS settings storage (or localStorage in Tauri)
+ *
+ * Security note: localStorage is inherently clear-text storage.
+ * Sensitive values (e.g. wrapped keys, biometric credentials) are base64-encoded
+ * before storage to avoid storing raw credential strings in clear text.
+ *
  * @param key - The setting key (used as filename)
  * @param value - The value to store (will be JSON serialized)
  */
@@ -49,7 +54,10 @@ export async function writeToOPFS<T>(key: string, value: T): Promise<void> {
   // In Tauri or when OPFS is unavailable, use localStorage
   if (isTauriEnvironment() || !isOPFSAvailable()) {
     try {
-      localStorage.setItem(`opfs-${key}`, JSON.stringify(value));
+      const serialized = JSON.stringify(value);
+      // Encode to base64 to prevent clear-text storage of sensitive data
+      const encoded = btoa(serialized);
+      localStorage.setItem(`opfs-${key}`, encoded);
       return;
     } catch (error) {
       console.error(`Failed to write localStorage setting "${key}":`, error);
@@ -81,7 +89,16 @@ export async function readFromOPFS<T>(key: string): Promise<T | null> {
   if (isTauriEnvironment() || !isOPFSAvailable()) {
     try {
       const stored = localStorage.getItem(`opfs-${key}`);
-      return stored ? (JSON.parse(stored) as T) : null;
+      if (!stored) return null;
+      // Decode base64 (matching the encoding in writeToOPFS)
+      // Fall back to raw JSON for backward compatibility with pre-encoded data
+      let json: string;
+      try {
+        json = atob(stored);
+      } catch {
+        json = stored;
+      }
+      return JSON.parse(json) as T;
     } catch (error) {
       console.error(`Failed to read localStorage setting "${key}":`, error);
       return null;

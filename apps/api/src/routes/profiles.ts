@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { randomInt, randomUUID } from 'node:crypto';
 import { query, queryOne, run, runMany } from '../db/index.js';
 import {
   buildRecurringPatternFromTemplate,
@@ -11,6 +12,11 @@ import {
   createProfileSchema,
   updateProfileSchema,
 } from '../middleware/validation.js';
+
+/** Cryptographically secure random float in [0, 1) */
+function secureRandom(): number {
+  return randomInt(0, 2 ** 32) / 2 ** 32;
+}
 
 const router = Router();
 
@@ -607,9 +613,9 @@ router.post('/:id/seed-demo', (req, res) => {
 
     // Helper to get random item from array
     const randomItem = <T>(arr: T[]): T =>
-      arr[Math.floor(Math.random() * arr.length)];
+      arr[Math.floor(secureRandom() * arr.length)];
     const randomAmount = (min: number, max: number) =>
-      Math.round((min + Math.random() * (max - min)) * 100) / 100;
+      Math.round((min + secureRandom() * (max - min)) * 100) / 100;
 
     // Generate 18 months of data
     for (let monthOffset = 0; monthOffset < 18; monthOffset++) {
@@ -622,7 +628,7 @@ router.post('/:id/seed-demo', (req, res) => {
       const daysInMonth = new Date(year, month + 1, 0).getDate();
 
       // Random number of transactions per month (10-30)
-      const txCount = 10 + Math.floor(Math.random() * 21);
+      const txCount = 10 + Math.floor(secureRandom() * 21);
 
       // Monthly salary on the 24th (only add for this month if the 24th has already passed)
       const salarySource = INCOME_SOURCES[0];
@@ -645,7 +651,7 @@ router.post('/:id/seed-demo', (req, res) => {
       }
 
       // Occasional zorgtoeslag (around 5th)
-      if (Math.random() > 0.3) {
+      if (secureRandom() > 0.3) {
         const toeslagSource = INCOME_SOURCES[1];
         transactions.push({
           date: new Date(Date.UTC(year, month, 5)).toISOString().split('T')[0],
@@ -735,8 +741,8 @@ router.post('/:id/seed-demo', (req, res) => {
           monthOffset === 0
             ? Math.min(daysInMonth, new Date().getDate())
             : daysInMonth;
-        const day = 1 + Math.floor(Math.random() * maxDay);
-        const expenseType = Math.random();
+        const day = 1 + Math.floor(secureRandom() * maxDay);
+        const expenseType = secureRandom();
 
         let merchant: { name: string; iban: string };
         let amount: number;
@@ -744,7 +750,7 @@ router.post('/:id/seed-demo', (req, res) => {
         let categoryId: number | null = null;
 
         // Use payment processor more often (40%) to create shared IBAN scenarios
-        const useProcessor = Math.random() > 0.6;
+        const useProcessor = secureRandom() > 0.6;
         const processor = useProcessor ? randomItem(PAYMENT_PROCESSORS) : null;
 
         if (expenseType < 0.3) {
@@ -847,7 +853,7 @@ router.post('/:id/seed-demo', (req, res) => {
           const ibanIndex = (monthOffset + i) % contact.ibans.length;
           transactions.push({
             date: new Date(
-              Date.UTC(year, month, 7 + i * 10 + Math.floor(Math.random() * 5))
+              Date.UTC(year, month, 7 + i * 10 + Math.floor(secureRandom() * 5))
             )
               .toISOString()
               .split('T')[0],
@@ -878,13 +884,13 @@ router.post('/:id/seed-demo', (req, res) => {
         'Amazon.nl',
       ];
       // Add 2-3 transactions per month for iDEAL
-      const idealTxCount = 2 + Math.floor(Math.random() * 2);
+      const idealTxCount = 2 + Math.floor(secureRandom() * 2);
       for (let i = 0; i < idealTxCount; i++) {
         const merchant =
           idealMerchants[(monthOffset * 3 + i) % idealMerchants.length];
         transactions.push({
           date: new Date(
-            Date.UTC(year, month, 5 + i * 7 + Math.floor(Math.random() * 3))
+            Date.UTC(year, month, 5 + i * 7 + Math.floor(secureRandom() * 3))
           )
             .toISOString()
             .split('T')[0],
@@ -904,13 +910,13 @@ router.post('/:id/seed-demo', (req, res) => {
       const adyenProcessor = PAYMENT_PROCESSORS[1];
       const adyenMerchants = ['Netflix', 'Spotify', 'Disney+', 'Adobe', 'Uber'];
       // Add 2-3 transactions per month for Adyen
-      const adyenTxCount = 2 + Math.floor(Math.random() * 2);
+      const adyenTxCount = 2 + Math.floor(secureRandom() * 2);
       for (let i = 0; i < adyenTxCount; i++) {
         const merchant =
           adyenMerchants[(monthOffset * 2 + i) % adyenMerchants.length];
         transactions.push({
           date: new Date(
-            Date.UTC(year, month, 1 + i * 8 + Math.floor(Math.random() * 3))
+            Date.UTC(year, month, 1 + i * 8 + Math.floor(secureRandom() * 3))
           )
             .toISOString()
             .split('T')[0],
@@ -941,7 +947,7 @@ router.post('/:id/seed-demo', (req, res) => {
         'Flink',
       ];
       // Add 2-3 transactions per month for Mollie
-      const mollieTxCount = 2 + Math.floor(Math.random() * 2);
+      const mollieTxCount = 2 + Math.floor(secureRandom() * 2);
       for (let i = 0; i < mollieTxCount; i++) {
         const merchant =
           mollieMerchants[(monthOffset * 2 + i) % mollieMerchants.length];
@@ -953,7 +959,7 @@ router.post('/:id/seed-demo', (req, res) => {
         ].includes(merchant);
         transactions.push({
           date: new Date(
-            Date.UTC(year, month, 12 + i * 6 + Math.floor(Math.random() * 3))
+            Date.UTC(year, month, 12 + i * 6 + Math.floor(secureRandom() * 3))
           )
             .toISOString()
             .split('T')[0],
@@ -1013,7 +1019,7 @@ router.post('/:id/seed-demo', (req, res) => {
         txDate.getUTCDate() > todayDay
       ) {
         if (todayDay > 1) {
-          const newDay = 1 + Math.floor(Math.random() * (todayDay - 1));
+          const newDay = 1 + Math.floor(secureRandom() * (todayDay - 1));
           txDate = new Date(Date.UTC(todayYear, todayMonth, newDay));
         } else {
           txDate = new Date(Date.UTC(todayYear, todayMonth, todayDay));
@@ -1030,7 +1036,7 @@ router.post('/:id/seed-demo', (req, res) => {
           todayCount++;
         } else {
           if (todayDay > 1) {
-            const newDay = 1 + Math.floor(Math.random() * (todayDay - 1));
+            const newDay = 1 + Math.floor(secureRandom() * (todayDay - 1));
             txDate = new Date(Date.UTC(todayYear, todayMonth, newDay));
           } else {
             // Skip if cannot move
@@ -1056,7 +1062,7 @@ router.post('/:id/seed-demo', (req, res) => {
 
     for (const tx of transactions) {
       balance += tx.amount;
-      const importHash = `demo_${profileId}_${tx.date}_${tx.amount}_${tx.merchant_name}_${Math.random().toString(36).substring(7)}`;
+      const importHash = `demo_${profileId}_${tx.date}_${tx.amount}_${tx.merchant_name}_${randomUUID().slice(0, 8)}`;
 
       txInserts.push([
         tx.date,
@@ -1120,7 +1126,7 @@ router.post('/:id/seed-demo', (req, res) => {
         }
 
         // Only add ~60% of contacts to address book to show unidentified counterparties
-        if (Math.random() < 0.6) {
+        if (secureRandom() < 0.6) {
           const abResult = run(
             'INSERT INTO address_book (iban, name, profile_id) VALUES (?, ?, ?)',
             [iban, name, profileId]

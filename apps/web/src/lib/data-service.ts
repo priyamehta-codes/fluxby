@@ -6781,10 +6781,16 @@ export function createDataService(db: Database) {
         const todayDay = currentDate.getUTCDate();
 
         // Helper functions
+        /** Cryptographically secure random float in [0, 1) */
+        const secureRandom = (): number => {
+          const buf = new Uint32Array(1);
+          crypto.getRandomValues(buf);
+          return buf[0] / 2 ** 32;
+        };
         const randomItem = <T>(arr: T[]): T =>
-          arr[Math.floor(Math.random() * arr.length)];
+          arr[Math.floor(secureRandom() * arr.length)];
         const randomAmount = (min: number, max: number) =>
-          Math.round((min + Math.random() * (max - min)) * 100) / 100;
+          Math.round((min + secureRandom() * (max - min)) * 100) / 100;
 
         // Allow certain merchants (e.g. Albert Heijn) to rotate through multiple IBANs
         // so the demo address book can reliably show merged contacts.
@@ -6822,7 +6828,7 @@ export function createDataService(db: Database) {
           const daysInMonth = new Date(year, month + 1, 0).getDate();
 
           // Random number of transactions per month (10-30)
-          const txCount = 10 + Math.floor(Math.random() * 21);
+          const txCount = 10 + Math.floor(secureRandom() * 21);
 
           // Monthly salary on the 24th
           const salarySource = INCOME_SOURCES[0];
@@ -6930,7 +6936,7 @@ export function createDataService(db: Database) {
           for (const sub of DEMO_MERCHANTS.subscriptions) {
             transactions.push({
               date: new Date(
-                Date.UTC(year, month, 10 + Math.floor(Math.random() * 5))
+                Date.UTC(year, month, 10 + Math.floor(secureRandom() * 5))
               )
                 .toISOString()
                 .split('T')[0],
@@ -6973,15 +6979,15 @@ export function createDataService(db: Database) {
               monthOffset === 0
                 ? Math.min(daysInMonth, currentDate.getDate())
                 : daysInMonth;
-            const day = 1 + Math.floor(Math.random() * maxDay);
-            const expenseType = Math.random();
+            const day = 1 + Math.floor(secureRandom() * maxDay);
+            const expenseType = secureRandom();
 
             let merchant: { name: string; iban: string };
             let amount: number;
             let description: string;
             let categoryId: string | null = null;
 
-            const useProcessor = Math.random() > 0.6;
+            const useProcessor = secureRandom() > 0.6;
             const processor = useProcessor
               ? randomItem(PAYMENT_PROCESSORS)
               : null;
@@ -7085,7 +7091,7 @@ export function createDataService(db: Database) {
                   Date.UTC(
                     year,
                     month,
-                    5 + i * 10 + Math.floor(Math.random() * 5)
+                    5 + i * 10 + Math.floor(secureRandom() * 5)
                   )
                 )
                   .toISOString()
@@ -7116,7 +7122,11 @@ export function createDataService(db: Database) {
               idealMerchants[(monthOffset * 3 + i) % idealMerchants.length];
             transactions.push({
               date: new Date(
-                Date.UTC(year, month, 5 + i * 7 + Math.floor(Math.random() * 3))
+                Date.UTC(
+                  year,
+                  month,
+                  5 + i * 7 + Math.floor(secureRandom() * 3)
+                )
               )
                 .toISOString()
                 .split('T')[0],
@@ -7139,7 +7149,11 @@ export function createDataService(db: Database) {
               adyenMerchants[(monthOffset * 2 + i) % adyenMerchants.length];
             transactions.push({
               date: new Date(
-                Date.UTC(year, month, 1 + i * 8 + Math.floor(Math.random() * 3))
+                Date.UTC(
+                  year,
+                  month,
+                  1 + i * 8 + Math.floor(secureRandom() * 3)
+                )
               )
                 .toISOString()
                 .split('T')[0],
@@ -7173,7 +7187,7 @@ export function createDataService(db: Database) {
                 Date.UTC(
                   year,
                   month,
-                  12 + i * 6 + Math.floor(Math.random() * 3)
+                  12 + i * 6 + Math.floor(secureRandom() * 3)
                 )
               )
                 .toISOString()
@@ -7232,7 +7246,7 @@ export function createDataService(db: Database) {
             txDate.getUTCDate() > todayDay
           ) {
             if (todayDay > 1) {
-              const newDay = 1 + Math.floor(Math.random() * (todayDay - 1));
+              const newDay = 1 + Math.floor(secureRandom() * (todayDay - 1));
               txDate = new Date(Date.UTC(todayYear, todayMonth, newDay));
             } else {
               txDate = new Date(Date.UTC(todayYear, todayMonth, todayDay));
@@ -7248,7 +7262,7 @@ export function createDataService(db: Database) {
               todayCount++;
             } else {
               if (todayDay > 1) {
-                const newDay = 1 + Math.floor(Math.random() * (todayDay - 1));
+                const newDay = 1 + Math.floor(secureRandom() * (todayDay - 1));
                 txDate = new Date(Date.UTC(todayYear, todayMonth, newDay));
               } else {
                 continue;
@@ -7270,7 +7284,7 @@ export function createDataService(db: Database) {
         const txData = transactions.map((tx) => {
           balance += tx.amount;
           const id = crypto.randomUUID();
-          const importHash = `demo_${targetProfileId}_${tx.date}_${tx.amount}_${tx.merchant_name}_${Math.random().toString(36).substring(7)}`;
+          const importHash = `demo_${targetProfileId}_${tx.date}_${tx.amount}_${tx.merchant_name}_${crypto.randomUUID().slice(0, 8)}`;
           return { id, balance, importHash, ...tx };
         });
 
