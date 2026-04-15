@@ -191,6 +191,11 @@ export const en: TranslationKeys = {
     clickToCheck: 'Click to check for updates',
     lastChecked: 'Last checked: {time}',
     backgroundCheckEnabled: 'Auto-check every 4 hours',
+    backingUp: 'Backing up database...',
+    backupFailed: 'Database backup failed. Update cancelled.',
+    installAnyway: 'Install anyway',
+    installAnywayConfirm:
+      'Are you sure? The update will proceed without a database backup.',
   },
   nav: {
     dashboard: 'Dashboard',

@@ -151,6 +151,10 @@ export interface TranslationKeys {
     clickToCheck: string;
     lastChecked: string;
     backgroundCheckEnabled: string;
+    backingUp: string;
+    backupFailed: string;
+    installAnyway: string;
+    installAnywayConfirm: string;
   };
   nav: {
     dashboard: string;
@@ -1549,6 +1553,11 @@ export const nl: TranslationKeys = {
     clickToCheck: 'Klik om te controleren op updates',
     lastChecked: 'Laatst gecontroleerd: {time}',
     backgroundCheckEnabled: 'Automatische controle elke 4 uur',
+    backingUp: 'Database back-up maken...',
+    backupFailed: 'Database back-up mislukt. Update geannuleerd.',
+    installAnyway: 'Toch installeren',
+    installAnywayConfirm:
+      'Weet je het zeker? De update wordt doorgezet zonder database back-up.',
   },
   nav: {
     dashboard: 'Dashboard',

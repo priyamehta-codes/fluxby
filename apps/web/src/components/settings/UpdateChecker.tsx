@@ -5,7 +5,9 @@ import {
   CheckCircle,
   AlertCircle,
   Loader2,
+  ShieldAlert,
 } from 'lucide-react';
+import { createPreUpdateBackup } from '@/lib/pre-update-backup';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -117,10 +119,12 @@ type UpdateStatus =
   | 'idle'
   | 'checking'
   | 'available'
+  | 'backing-up'
   | 'downloading'
   | 'ready'
   | 'up-to-date'
-  | 'error';
+  | 'error'
+  | 'backup-failed';
 
 export function UpdateChecker() {
   const { t, language } = useLanguage();
@@ -134,6 +138,7 @@ export function UpdateChecker() {
   const [showReleaseNotes, setShowReleaseNotes] = useState(false);
   const [webUpdateAvailable, setWebUpdateAvailable] = useState(false);
   const [lastChecked, setLastChecked] = useState<Date | null>(null);
+  const [backupError, setBackupError] = useState<string | null>(null);
 
   // Parse localized release notes based on current language
   const localizedReleaseNotes = useMemo(() => {
@@ -291,7 +296,7 @@ export function UpdateChecker() {
     }
   }, [t, toast, status]);
 
-  const downloadAndInstall = useCallback(async () => {
+  const performDownloadAndInstall = useCallback(async () => {
     if (isTauri) {
       // Tauri: Download and install via plugin
       if (!updateInfo) return;
@@ -354,6 +359,31 @@ export function UpdateChecker() {
     }
   }, [updateInfo, t, toast, webUpdateAvailable]);
 
+  const downloadAndInstall = useCallback(async () => {
+    if (isTauri) {
+      // Back up database before installing
+      setStatus('backing-up');
+      setBackupError(null);
+
+      const result = await createPreUpdateBackup();
+      if (!result.success) {
+        setBackupError(result.error ?? 'Unknown error');
+        setStatus('backup-failed');
+        toast.error(
+          t.updater?.backupFailed || 'Database backup failed. Update cancelled.'
+        );
+        return;
+      }
+    }
+
+    await performDownloadAndInstall();
+  }, [performDownloadAndInstall, t, toast]);
+
+  const installAnyway = useCallback(async () => {
+    setBackupError(null);
+    await performDownloadAndInstall();
+  }, [performDownloadAndInstall]);
+
   // Auto-check for updates on mount
   useEffect(() => {
     // Check after a short delay to not block initial render
@@ -388,6 +418,13 @@ export function UpdateChecker() {
       status === 'error'
     ) {
       setLastChecked(new Date());
+    }
+  }, [status]);
+
+  // Reset backup error when going back to available
+  useEffect(() => {
+    if (status === 'available') {
+      setBackupError(null);
     }
   }, [status]);
 
@@ -503,6 +540,30 @@ export function UpdateChecker() {
                     </div>
                   </>
                 )}
+                {status === 'backing-up' && (
+                  <>
+                    <Loader2 className='h-5 w-5 animate-spin text-purple-600' />
+                    <span className='text-sm'>
+                      {t.updater?.backingUp || 'Backing up database...'}
+                    </span>
+                  </>
+                )}
+                {status === 'backup-failed' && (
+                  <>
+                    <ShieldAlert className='h-5 w-5 text-orange-500' />
+                    <div>
+                      <span className='text-sm text-orange-700 dark:text-orange-400'>
+                        {t.updater?.backupFailed ||
+                          'Database backup failed. Update cancelled.'}
+                      </span>
+                      {backupError && (
+                        <p className='mt-0.5 text-xs text-muted-foreground'>
+                          {backupError}
+                        </p>
+                      )}
+                    </div>
+                  </>
+                )}
                 {status === 'downloading' && (
                   <>
                     <Loader2 className='h-5 w-5 animate-spin text-purple-600' />
@@ -570,6 +631,34 @@ export function UpdateChecker() {
                     )}
                     {installButtonLabel}
                   </Button>
+                )}
+                {status === 'backup-failed' && (
+                  <div className='flex gap-2'>
+                    <Button
+                      variant='outline'
+                      size='sm'
+                      onClick={() => setStatus('available')}
+                    >
+                      {t.common?.cancel || 'Cancel'}
+                    </Button>
+                    <Button
+                      variant='destructive'
+                      size='sm'
+                      onClick={() => {
+                        if (
+                          window.confirm(
+                            t.updater?.installAnywayConfirm ||
+                              'Are you sure? The update will proceed without a database backup.'
+                          )
+                        ) {
+                          installAnyway();
+                        }
+                      }}
+                    >
+                      <ShieldAlert className='mr-2 h-4 w-4' />
+                      {t.updater?.installAnyway || 'Install anyway'}
+                    </Button>
+                  </div>
                 )}
               </div>
             </div>
