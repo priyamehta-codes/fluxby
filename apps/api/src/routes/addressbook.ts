@@ -15,7 +15,6 @@ import {
   lookupByIbanSchema,
 } from '../middleware/validation.js';
 import { escapeRegex } from '../utils/index.js';
-import { sensitiveRateLimiter } from '../middleware/rate-limit.js';
 
 const router = Router();
 
@@ -82,7 +81,7 @@ function applyCleanupRules(name: string, rules: { pattern: string }[]): string {
   let cleaned = name;
   for (const rule of rules) {
     // All patterns are treated as literal strings (escaped) to prevent regex injection.
-    // If pattern was stored with /regex/flags syntax, strip delimiters first.
+    // If pattern was stored with /regex/flags syntax, strip delimiters and discard flags intentionally.
     let rawPattern = rule.pattern;
     if (rawPattern.startsWith('/') && rawPattern.lastIndexOf('/') > 0) {
       const lastSlash = rawPattern.lastIndexOf('/');
@@ -1701,7 +1700,7 @@ router.delete('/payment-providers/:id', (req, res) => {
  *       200:
  *         description: Lijst met payment processor regels
  */
-router.get('/payment-provider-rules', sensitiveRateLimiter, (_req, res) => {
+router.get('/payment-provider-rules', (_req, res) => {
   try {
     // Ensure default payment provider rules exist
     const defaultRules = [
