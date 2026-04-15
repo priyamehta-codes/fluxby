@@ -7,6 +7,7 @@ import {
   updateAccountSchema,
   updateAccountOrderSchema,
 } from '../middleware/validation.js';
+import { sensitiveRateLimiter } from '../middleware/rate-limit.js';
 
 const router = Router();
 
@@ -315,37 +316,42 @@ router.post('/', validate(createAccountSchema), (req, res) => {
  *       400:
  *         description: Invalid request data
  */
-router.patch('/order', validate(updateAccountOrderSchema), (req, res) => {
-  try {
-    const { accountIds } = req.body;
-    const profileId = getEffectiveProfileId(req);
+router.patch(
+  '/order',
+  sensitiveRateLimiter,
+  validate(updateAccountOrderSchema),
+  (req, res) => {
+    try {
+      const { accountIds } = req.body;
+      const profileId = getEffectiveProfileId(req);
 
-    // Verify all accounts belong to this profile before updating
-    for (const accountId of accountIds) {
-      if (!verifyAccountProfile(accountId, profileId)) {
-        return res.status(403).json({
-          success: false,
-          error: 'Access denied: account does not belong to this profile',
-        });
+      // Verify all accounts belong to this profile before updating
+      for (const accountId of accountIds) {
+        if (!verifyAccountProfile(accountId, profileId)) {
+          return res.status(403).json({
+            success: false,
+            error: 'Access denied: account does not belong to this profile',
+          });
+        }
       }
+
+      // Update order_index for each account
+      accountIds.forEach((accountId: number, index: number) => {
+        run(
+          'UPDATE accounts SET order_index = ? WHERE id = ? AND profile_id = ?',
+          [index, accountId, profileId]
+        );
+      });
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Error updating account order:', error);
+      res
+        .status(500)
+        .json({ success: false, error: 'Failed to update account order' });
     }
-
-    // Update order_index for each account
-    accountIds.forEach((accountId: number, index: number) => {
-      run(
-        'UPDATE accounts SET order_index = ? WHERE id = ? AND profile_id = ?',
-        [index, accountId, profileId]
-      );
-    });
-
-    res.json({ success: true });
-  } catch (error) {
-    console.error('Error updating account order:', error);
-    res
-      .status(500)
-      .json({ success: false, error: 'Failed to update account order' });
   }
-});
+);
 
 /**
  * @swagger
@@ -382,52 +388,59 @@ router.patch('/order', validate(updateAccountOrderSchema), (req, res) => {
  *       403:
  *         description: Access denied
  */
-router.patch('/:id', validate(updateAccountSchema), (req, res) => {
-  try {
-    const id = parseInt(req.params.id);
-    const profileId = getEffectiveProfileId(req);
-    const { name, type, currentBalance } = req.body;
+router.patch(
+  '/:id',
+  sensitiveRateLimiter,
+  validate(updateAccountSchema),
+  (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const profileId = getEffectiveProfileId(req);
+      const { name, type, currentBalance } = req.body;
 
-    // Verify account belongs to this profile
-    if (!verifyAccountProfile(id, profileId)) {
-      return res.status(403).json({
-        success: false,
-        error: 'Access denied: account does not belong to this profile',
-      });
+      // Verify account belongs to this profile
+      if (!verifyAccountProfile(id, profileId)) {
+        return res.status(403).json({
+          success: false,
+          error: 'Access denied: account does not belong to this profile',
+        });
+      }
+
+      const updates: string[] = [];
+      const params: unknown[] = [];
+
+      if (name !== undefined) {
+        updates.push('name = ?');
+        params.push(name);
+      }
+
+      if (type !== undefined) {
+        updates.push('type = ?');
+        params.push(type);
+      }
+
+      if (currentBalance !== undefined) {
+        updates.push('current_balance = ?');
+        params.push(currentBalance);
+      }
+
+      // Schema ensures at least one field is present
+      params.push(id);
+      params.push(profileId);
+      run(
+        `UPDATE accounts SET ${updates.join(', ')} WHERE id = ? AND profile_id = ?`,
+        params
+      );
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Error updating account:', error);
+      res
+        .status(500)
+        .json({ success: false, error: 'Failed to update account' });
     }
-
-    const updates: string[] = [];
-    const params: unknown[] = [];
-
-    if (name !== undefined) {
-      updates.push('name = ?');
-      params.push(name);
-    }
-
-    if (type !== undefined) {
-      updates.push('type = ?');
-      params.push(type);
-    }
-
-    if (currentBalance !== undefined) {
-      updates.push('current_balance = ?');
-      params.push(currentBalance);
-    }
-
-    // Schema ensures at least one field is present
-    params.push(id);
-    params.push(profileId);
-    run(
-      `UPDATE accounts SET ${updates.join(', ')} WHERE id = ? AND profile_id = ?`,
-      params
-    );
-
-    res.json({ success: true });
-  } catch (error) {
-    console.error('Error updating account:', error);
-    res.status(500).json({ success: false, error: 'Failed to update account' });
   }
-});
+);
 
 /**
  * @swagger
@@ -452,7 +465,7 @@ router.patch('/:id', validate(updateAccountSchema), (req, res) => {
  *       403:
  *         description: Access denied
  */
-router.delete('/:id', (req, res) => {
+router.delete('/:id', sensitiveRateLimiter, (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const profileId = getEffectiveProfileId(req);
@@ -521,7 +534,7 @@ router.delete('/:id', (req, res) => {
  *       404:
  *         description: Account not found
  */
-router.post('/:id/recalculate-balance', (req, res) => {
+router.post('/:id/recalculate-balance', sensitiveRateLimiter, (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const profileId = getEffectiveProfileId(req);

@@ -181,8 +181,12 @@ function parseFlexibleAmount(value: string): number | null {
 let aborted = false;
 
 self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
-  // Web Workers can only receive messages from the creating same-origin context.
-  // Validate message structure to reject malformed payloads.
+  // Security: Web Workers only receive messages from the creating same-origin context.
+  // Unlike window.postMessage, Worker message events have no cross-origin surface.
+  // event.origin is always empty in Worker context, so origin checks are not applicable.
+  // Defense-in-depth: reject synthetic/untrusted events and validate message structure.
+  if (!event.isTrusted) return;
+
   const data = event.data;
   if (
     !data ||

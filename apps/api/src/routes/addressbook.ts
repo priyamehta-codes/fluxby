@@ -14,15 +14,17 @@ import {
   updatePaymentProviderRuleSchema,
   lookupByIbanSchema,
 } from '../middleware/validation.js';
-import { isRegexSafe, escapeRegex } from '../utils/index.js';
+import { escapeRegex } from '../utils/index.js';
+import { sensitiveRateLimiter } from '../middleware/rate-limit.js';
 
 const router = Router();
 
 /**
- * Safely execute a regex replacement with timeout protection
- * Returns the original string if regex execution fails or times out
+ * Safely replace a pattern in a string using escaped (literal) matching.
+ * All patterns are escaped to prevent regex injection (CodeQL js/regex-injection).
+ * Returns the original string if replacement fails.
  */
-function safeRegexReplace(
+function safeLiteralReplace(
   input: string,
   pattern: string,
   flags: string,
@@ -31,27 +33,16 @@ function safeRegexReplace(
   // Validate flags - only allow safe flags
   const safeFlags = flags.replace(/[^gimsuy]/g, '') || 'gi';
 
-  // Validate pattern safety (blocks nested quantifiers, backreferences, etc.)
-  if (!isRegexSafe(pattern)) {
-    console.warn(
-      `Unsafe regex pattern blocked: ${pattern.replace(/[\r\n]/g, '')}`
-    );
+  // Limit input length for regex operations
+  if (input.length > 1000) {
     return input;
   }
 
   try {
-    // Pre-validate by compiling the pattern in a try-catch
-    // to reject any syntactically invalid expressions
-    let regex: RegExp;
-    try {
-      regex = new RegExp(pattern, safeFlags);
-    } catch {
-      return input;
-    }
-    // Limit input length for regex operations
-    if (input.length > 1000) {
-      return input;
-    }
+    // Always escape the pattern to prevent regex injection.
+    // User-defined patterns are treated as literal strings.
+    const escapedPattern = escapeRegex(pattern);
+    const regex = new RegExp(escapedPattern, safeFlags);
     return input.replace(regex, replacement);
   } catch (error) {
     logError('Regex error:', error);
@@ -90,18 +81,14 @@ function getCleanupRules(): { pattern: string }[] {
 function applyCleanupRules(name: string, rules: { pattern: string }[]): string {
   let cleaned = name;
   for (const rule of rules) {
-    // Try to parse as regex first (if pattern starts/ends with /)
-    if (rule.pattern.startsWith('/') && rule.pattern.lastIndexOf('/') > 0) {
-      const lastSlash = rule.pattern.lastIndexOf('/');
-      const pattern = rule.pattern.slice(1, lastSlash);
-      const flags = rule.pattern.slice(lastSlash + 1) || 'gi';
-      cleaned = safeRegexReplace(cleaned, pattern, flags, '').trim();
-    } else {
-      // For literal patterns, use case-insensitive global replacement
-      // Pattern 'SumUp *' matches the literal string 'SumUp *'
-      const escapedPattern = escapeRegex(rule.pattern);
-      cleaned = cleaned.replace(new RegExp(escapedPattern, 'gi'), '').trim();
+    // All patterns are treated as literal strings (escaped) to prevent regex injection.
+    // If pattern was stored with /regex/flags syntax, strip delimiters first.
+    let rawPattern = rule.pattern;
+    if (rawPattern.startsWith('/') && rawPattern.lastIndexOf('/') > 0) {
+      const lastSlash = rawPattern.lastIndexOf('/');
+      rawPattern = rawPattern.slice(1, lastSlash);
     }
+    cleaned = safeLiteralReplace(cleaned, rawPattern, 'gi', '').trim();
   }
   // Clean up multiple spaces
   return cleaned.replace(/\s+/g, ' ').trim() || name;
@@ -1714,7 +1701,7 @@ router.delete('/payment-providers/:id', (req, res) => {
  *       200:
  *         description: Lijst met payment processor regels
  */
-router.get('/payment-provider-rules', (_req, res) => {
+router.get('/payment-provider-rules', sensitiveRateLimiter, (_req, res) => {
   try {
     // Ensure default payment provider rules exist
     const defaultRules = [

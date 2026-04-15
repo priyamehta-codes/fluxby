@@ -2473,12 +2473,8 @@ export function createDataService(db: Database) {
             ) + 1;
       const daysRemaining = Math.max(0, totalDays - daysPassed);
 
-      const upToTodayStr =
-        now < periodStart
-          ? periodStartStr
-          : now > periodEnd
-            ? periodEndStr
-            : todayStr;
+      // Note: 'now > periodEnd' case is already handled by the isPastPeriod early return above
+      const upToTodayStr = now < periodStart ? periodStartStr : todayStr;
 
       // Get current period totals
       const currentPeriodTotals = await db.queryOneAsync<{

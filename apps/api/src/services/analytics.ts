@@ -646,12 +646,8 @@ export function getBalanceForecast(
   const daysRemaining = Math.max(0, totalDays - daysPassed);
 
   // Get what's been spent/earned so far in this period
-  const upToTodayStr =
-    now < periodStart
-      ? periodStartStr
-      : now > periodEnd
-        ? periodEndStr
-        : todayStr;
+  // Note: 'now > periodEnd' case is already handled by the isPastPeriod early return above
+  const upToTodayStr = now < periodStart ? periodStartStr : todayStr;
 
   const currentPeriodTotals = queryOne<{
     income: number;
