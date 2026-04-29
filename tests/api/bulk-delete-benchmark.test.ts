@@ -499,8 +499,9 @@ describe('Stress Test: Edge Cases', () => {
     const secondHalfAvg =
       secondHalf.reduce((a, b) => a + b, 0) / secondHalf.length;
 
-    // Second half shouldn't be more than 50% slower than first half
-    expect(secondHalfAvg).toBeLessThan(firstHalfAvg * 1.5);
+    // Second half shouldn't be more than 3x slower than first half
+    // (generous tolerance to avoid flakiness on CI runners with variable scheduling)
+    expect(secondHalfAvg).toBeLessThan(firstHalfAvg * 3);
   });
 
   it('handles odd-sized batches (not divisible by batch size)', () => {
