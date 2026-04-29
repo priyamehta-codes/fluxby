@@ -50,7 +50,10 @@ export async function createPreUpdateBackup(): Promise<PreUpdateBackupResult> {
     // Read current DB bytes
     const dbBytes = await fsModule.readFile(dbPath);
     if (!dbBytes || dbBytes.length === 0) {
-      return { success: true, path: undefined }; // empty DB, skip
+      console.warn(
+        'Pre-update backup: database file is empty (0 bytes), skipping backup'
+      );
+      return { success: false, error: 'Database file is empty (0 bytes)' };
     }
 
     // Ensure backup directory exists
@@ -90,10 +93,12 @@ async function pruneOldBackups(
     const entries = await fs.readDir(backupDir);
     const backupFiles = entries
       .filter(
-        (e) =>
-          e.name?.startsWith('pre-update-backup-') && e.name.endsWith('.db')
+        (e): e is typeof e & { name: string } =>
+          typeof e.name === 'string' &&
+          e.name.startsWith('pre-update-backup-') &&
+          e.name.endsWith('.db')
       )
-      .map((e) => e.name as string)
+      .map((e) => e.name)
       .sort(); // alphabetical = chronological for ISO timestamps
 
     if (backupFiles.length <= MAX_BACKUPS) return;

@@ -27,6 +27,7 @@ import {
 } from '@/components/ui/dialog';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useToast } from '@/contexts/ToastContext';
+import { useConfirm } from '@/contexts/ConfirmContext';
 import type { Language } from '@/lib/i18n';
 
 // Check if running in Tauri
@@ -129,6 +130,7 @@ type UpdateStatus =
 export function UpdateChecker() {
   const { t, language } = useLanguage();
   const toast = useToast();
+  const confirm = useConfirm();
 
   const [status, setStatus] = useState<UpdateStatus>('idle');
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
@@ -489,7 +491,11 @@ export function UpdateChecker() {
         <CardContent className='px-3 pt-0 pb-3 sm:px-6 sm:pt-0 sm:pb-6'>
           <div className='space-y-4'>
             {/* Status display */}
-            <div className='flex items-center justify-between rounded-lg border p-3'>
+            <div
+              className='flex items-center justify-between rounded-lg border p-3'
+              aria-live='polite'
+              aria-atomic='true'
+            >
               <div className='flex items-center gap-3'>
                 {status === 'checking' && (
                   <>
@@ -644,13 +650,17 @@ export function UpdateChecker() {
                     <Button
                       variant='destructive'
                       size='sm'
-                      onClick={() => {
-                        if (
-                          window.confirm(
+                      onClick={async () => {
+                        const confirmed = await confirm({
+                          title: t.updater?.installAnyway || 'Install anyway',
+                          message:
                             t.updater?.installAnywayConfirm ||
-                              'Are you sure? The update will proceed without a database backup.'
-                          )
-                        ) {
+                            'Are you sure? The update will proceed without a database backup.',
+                          variant: 'danger',
+                          confirmLabel:
+                            t.updater?.installAnyway || 'Install anyway',
+                        });
+                        if (confirmed) {
                           installAnyway();
                         }
                       }}

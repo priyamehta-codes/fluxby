@@ -132,32 +132,52 @@ describe('pre-update-backup', () => {
       expect(result.error).toBe('disk full');
     });
 
+    it('should return failure when database file is zero bytes', async () => {
+      mockFs.readFile.mockResolvedValue(new Uint8Array(0));
+
+      const { createPreUpdateBackup } = await import('@/lib/pre-update-backup');
+
+      const result = await createPreUpdateBackup();
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('0 bytes');
+      expect(mockFs.writeFile).not.toHaveBeenCalled();
+    });
+
     describe('retention (pruning)', () => {
       it('should delete oldest backups when more than 3 exist', async () => {
+        // readDir returns BOTH pre-existing backups AND the newly written one
         mockFs.readDir.mockResolvedValue([
           { name: 'pre-update-backup-2025-01-01T00-00-00-000Z.db' },
           { name: 'pre-update-backup-2025-02-01T00-00-00-000Z.db' },
           { name: 'pre-update-backup-2025-03-01T00-00-00-000Z.db' },
           { name: 'pre-update-backup-2025-04-01T00-00-00-000Z.db' },
+          { name: 'pre-update-backup-2025-05-01T00-00-00-000Z.db' },
         ]);
 
         const { createPreUpdateBackup } =
           await import('@/lib/pre-update-backup');
 
         await createPreUpdateBackup();
-        // Should delete the oldest one (4 exist, keep 3 → delete 1)
-        expect(mockFs.remove).toHaveBeenCalledTimes(1);
+        // 5 backup files exist, keep 3 → delete 2 oldest
+        expect(mockFs.remove).toHaveBeenCalledTimes(2);
         expect(mockFs.remove).toHaveBeenCalledWith(
           expect.stringContaining(
             'pre-update-backup-2025-01-01T00-00-00-000Z.db'
           )
         );
+        expect(mockFs.remove).toHaveBeenCalledWith(
+          expect.stringContaining(
+            'pre-update-backup-2025-02-01T00-00-00-000Z.db'
+          )
+        );
       });
 
       it('should not delete anything when 3 or fewer backups exist', async () => {
+        // readDir sees 2 pre-existing + 1 just written = 3 total (at limit)
         mockFs.readDir.mockResolvedValue([
           { name: 'pre-update-backup-2025-01-01T00-00-00-000Z.db' },
           { name: 'pre-update-backup-2025-02-01T00-00-00-000Z.db' },
+          { name: 'pre-update-backup-2025-03-01T00-00-00-000Z.db' },
         ]);
 
         const { createPreUpdateBackup } =
@@ -168,11 +188,13 @@ describe('pre-update-backup', () => {
       });
 
       it('should ignore non-backup files when pruning', async () => {
+        // readDir sees 4 pre-existing backup files + 1 new + junk files
         mockFs.readDir.mockResolvedValue([
           { name: 'pre-update-backup-2025-01-01T00-00-00-000Z.db' },
           { name: 'pre-update-backup-2025-02-01T00-00-00-000Z.db' },
           { name: 'pre-update-backup-2025-03-01T00-00-00-000Z.db' },
           { name: 'pre-update-backup-2025-04-01T00-00-00-000Z.db' },
+          { name: 'pre-update-backup-2025-05-01T00-00-00-000Z.db' },
           { name: 'some-other-file.txt' },
           { name: '.DS_Store' },
         ]);
@@ -181,8 +203,8 @@ describe('pre-update-backup', () => {
           await import('@/lib/pre-update-backup');
 
         await createPreUpdateBackup();
-        // Only 1 deleted (4 backup files → keep 3 → delete 1)
-        expect(mockFs.remove).toHaveBeenCalledTimes(1);
+        // 5 backup files (non-backup files ignored) → keep 3 → delete 2
+        expect(mockFs.remove).toHaveBeenCalledTimes(2);
       });
 
       it('should not fail backup if pruning fails', async () => {
