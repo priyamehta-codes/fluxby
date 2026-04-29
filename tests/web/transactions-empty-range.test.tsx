@@ -91,6 +91,12 @@ describe('Transactions empty state when period has no matches but full data does
     // IntersectionObserver is not present in jsdom by default - provide a minimal stub
     OriginalIntersectionObserver = (global as any).IntersectionObserver;
     (global as any).IntersectionObserver = class {
+      constructor(
+        _callback: IntersectionObserverCallback,
+        _options?: IntersectionObserverInit
+      ) {
+        // intentionally empty stub
+      }
       observe = vi.fn();
       unobserve = vi.fn();
       disconnect = vi.fn();

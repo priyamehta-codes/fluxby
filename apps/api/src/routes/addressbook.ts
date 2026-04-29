@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { query, queryOne, run, db } from '../db/index.js';
 import { getEffectiveProfileId } from '../middleware/profileAuth.js';
+import { globalRateLimiter } from '../middleware/rate-limit.js';
 import {
   validate,
   createAddressBookEntrySchema,
@@ -1700,7 +1701,7 @@ router.delete('/payment-providers/:id', (req, res) => {
  *       200:
  *         description: Lijst met payment processor regels
  */
-router.get('/payment-provider-rules', (_req, res) => {
+router.get('/payment-provider-rules', globalRateLimiter, (_req, res) => {
   try {
     // Ensure default payment provider rules exist
     const defaultRules = [

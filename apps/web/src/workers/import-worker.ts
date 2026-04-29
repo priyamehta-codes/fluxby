@@ -180,6 +180,7 @@ function parseFlexibleAmount(value: string): number | null {
 
 let aborted = false;
 
+// codeql[js/missing-origin-check] -- Web Workers only receive messages from the creating same-origin context; event.origin is always empty in Worker scope.
 self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
   // Security: Web Workers only receive messages from the creating same-origin context.
   // Unlike window.postMessage, Worker message events have no cross-origin surface.
