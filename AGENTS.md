@@ -134,20 +134,6 @@ Only commit when all checks pass. Fix any issues before proceeding.
 
 **IMPORTANT**: Any LLM contributing to this project must ensure that all ESLint, TypeScript, and test errors are fixed, even if they are outside the immediate scope of the task.
 
-## Project Structure
-
-```
-apps/
-  api/          # Express.js backend (port 3001) - for developers building custom interfaces
-  web/          # React PWA frontend - uses OPFS for local-first storage
-  landing/      # Fluxby landing page (port 5177) - marketing & docs
-  tauri/        # Tauri desktop app wrapper - uses local SQLite
-packages/
-  shared/       # Shared TypeScript types & utilities
-  database/     # Universal SQLite layer (OPFS/Tauri/Node adapters)
-  core/         # Business logic (CSV parsing, categorization, analytics)
-```
-
 ## Architecture Overview
 
 ### Local-First Design (OPFS)
@@ -246,24 +232,6 @@ With transactions, all operations share a single commit/sync, dramatically impro
 ## Nexus Agent System
 
 This repository uses the **Nexus multi-agent orchestration system** for complex planning, execution, and review workflows.
-
-### System Overview
-
-```
-.nexus/                     # Project-specific orchestration files
-├── features/               # Feature planning and tracking
-├── memory/                 # Agent preferences and learned behaviors
-├── toc.md                  # Master feature index
-├── tmp/                    # Temporary files (gitignored)
-└── logs/                   # Execution logs
-
-.github/
-├── agents/                 # Agent definitions (12 specialized agents)
-├── prompts/                # Workflow prompts (Nexus workflows)
-└── skills/                 # Domain-specific knowledge (16 skills)
-
-.nexusrc                    # Points to central Nexus template repo
-```
 
 ### The Orchestrator (@Nexus)
 
@@ -504,40 +472,6 @@ Developer documentation is available on the landing page (`apps/landing`) at `/d
    - `apps/landing/src/lib/i18n/nl.ts` and `en.ts` (translations)
 3. **Changed Response Formats**: Update the code examples and response types
 4. **New Query Parameters**: Document in the parameter tables
-
-### Docs Structure
-
-```
-apps/landing/src/
-├── pages/docs/           # Developer documentation pages
-│   ├── DocsIntroduction.tsx
-│   ├── DocsAuthentication.tsx
-│   ├── DocsProfiles.tsx
-│   ├── DocsErrors.tsx
-│   ├── DocsAccounts.tsx
-│   ├── DocsTransactions.tsx
-│   ├── DocsCategories.tsx
-│   ├── DocsBudgets.tsx
-│   ├── DocsAnalytics.tsx
-│   └── DocsAddressBook.tsx
-├── pages/help/           # Help Center pages (end users)
-│   ├── HelpHome.tsx
-│   ├── HelpBankConnection.tsx
-│   ├── HelpBudgeting.tsx
-│   ├── HelpPrivacy.tsx
-│   └── HelpDevIntro.tsx
-├── components/docs/      # Shared docs components
-│   ├── DocsLayout.tsx
-│   ├── DocsSidebar.tsx
-│   └── CodeBlock.tsx
-├── components/help/      # Help Center components
-│   ├── HelpLayout.tsx
-│   ├── HelpSidebar.tsx
-│   └── ScreenshotPlaceholder.tsx
-└── lib/i18n/            # Translations (NL + EN)
-    ├── nl.ts
-    └── en.ts
-```
 
 ## Help Center Documentation
 
