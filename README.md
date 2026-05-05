@@ -3,7 +3,7 @@
 A modern, local-first application for visualizing and analyzing your bank data. Upload CSV exports from your bank and instantly gain insights into your finances.
 
 ![1.png](apps/screenshots/1.png)
-
+ 
 ## ✨ Features
 
 ### 💼 Financial Management
